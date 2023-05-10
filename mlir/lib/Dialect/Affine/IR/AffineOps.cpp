@@ -707,7 +707,7 @@ static std::optional<int64_t> getUpperBound(Value iv) {
 /// expressions (w.r.t constant coefficients) so as to not depend on anything
 /// heavyweight in `Analysis`. Expressions of the form: c0*d0 + c1*d1 + c2*s0 +
 /// ... + c_n are handled. Expressions involving floordiv, ceildiv, mod or
-/// semi-affine ones will lead a none being returned.
+/// semi-affine ones will lead std::nullopt being returned.
 static std::optional<int64_t>
 getBoundForExpr(AffineExpr expr, unsigned numDims, unsigned numSymbols,
                 ArrayRef<std::optional<int64_t>> constLowerBounds,
@@ -962,7 +962,7 @@ static void simplifyMinOrMaxExprWithOperands(AffineMap &map,
   // bound is redundant by checking if its highest (in case of max) and its
   // lowest (in the case of min) value is already lower than (or higher than)
   // the lower bound (or upper bound in the case of min) of another bound.
-  SmallVector<Optional<int64_t>, 4> lowerBounds, upperBounds;
+  SmallVector<std::optional<int64_t>, 4> lowerBounds, upperBounds;
   lowerBounds.reserve(map.getNumResults());
   upperBounds.reserve(map.getNumResults());
   for (AffineExpr e : map.getResults()) {
