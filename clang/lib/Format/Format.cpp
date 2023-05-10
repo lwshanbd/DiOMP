@@ -879,6 +879,8 @@ template <> struct MappingTraits<FormatStyle> {
     IO.mapOptional("BinPackArguments", Style.BinPackArguments);
     IO.mapOptional("BinPackParameters", Style.BinPackParameters);
     IO.mapOptional("BitFieldColonSpacing", Style.BitFieldColonSpacing);
+    IO.mapOptional("BracedInitializerIndentWidth",
+                   Style.BracedInitializerIndentWidth);
     IO.mapOptional("BraceWrapping", Style.BraceWrapping);
     IO.mapOptional("BreakAfterAttributes", Style.BreakAfterAttributes);
     IO.mapOptional("BreakAfterJavaFieldAnnotations",
@@ -1337,6 +1339,7 @@ FormatStyle getLLVMStyle(FormatStyle::LanguageKind Language) {
   LLVMStyle.BitFieldColonSpacing = FormatStyle::BFCS_Both;
   LLVMStyle.BinPackArguments = true;
   LLVMStyle.BinPackParameters = true;
+  LLVMStyle.BracedInitializerIndentWidth = std::nullopt;
   LLVMStyle.BraceWrapping = {/*AfterCaseLabel=*/false,
                              /*AfterClass=*/false,
                              /*AfterControlStatement=*/FormatStyle::BWACS_Never,
@@ -2806,7 +2809,7 @@ struct JavaImportDirective {
 // Determines whether 'Ranges' intersects with ('Start', 'End').
 static bool affectsRange(ArrayRef<tooling::Range> Ranges, unsigned Start,
                          unsigned End) {
-  for (auto Range : Ranges) {
+  for (const auto &Range : Ranges) {
     if (Range.getOffset() < End &&
         Range.getOffset() + Range.getLength() > Start) {
       return true;

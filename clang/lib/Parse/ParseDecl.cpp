@@ -21,6 +21,7 @@
 #include "clang/Parse/ParseDiagnostic.h"
 #include "clang/Parse/Parser.h"
 #include "clang/Parse/RAIIObjectsForParser.h"
+#include "clang/Sema/EnterExpressionEvaluationContext.h"
 #include "clang/Sema/Lookup.h"
 #include "clang/Sema/ParsedTemplate.h"
 #include "clang/Sema/Scope.h"
@@ -7381,13 +7382,9 @@ void Parser::ParseParameterDeclarationClause(
           DefArgToks.reset(new CachedTokens);
 
           SourceLocation ArgStartLoc = NextToken().getLocation();
-          if (!ConsumeAndStoreInitializer(*DefArgToks, CIK_DefaultArgument)) {
-            DefArgToks.reset();
-            Actions.ActOnParamDefaultArgumentError(Param, EqualLoc);
-          } else {
-            Actions.ActOnParamUnparsedDefaultArgument(Param, EqualLoc,
-                                                      ArgStartLoc);
-          }
+          ConsumeAndStoreInitializer(*DefArgToks, CIK_DefaultArgument);
+          Actions.ActOnParamUnparsedDefaultArgument(Param, EqualLoc,
+                                                    ArgStartLoc);
         } else {
           // Consume the '='.
           ConsumeToken();

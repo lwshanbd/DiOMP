@@ -137,8 +137,6 @@ namespace {
       (void) llvm::createMergedLoadStoreMotionPass();
       (void) llvm::createGVNPass();
       (void) llvm::createPostDomTree();
-      (void) llvm::createInstructionNamerPass();
-      (void) llvm::createMetaRenamerPass();
       (void) llvm::createMergeICmpsLegacyPass();
       (void) llvm::createExpandLargeDivRemPass();
       (void) llvm::createExpandMemCmpPass();
@@ -164,7 +162,6 @@ namespace {
       (void) llvm::createMustBeExecutedContextPrinter();
       (void)llvm::createScalarizeMaskedMemIntrinLegacyPass();
       (void) llvm::createHardwareLoopsLegacyPass();
-      (void) llvm::createInjectTLIMappingsLegacyPass();
       (void) llvm::createUnifyLoopExitsPass();
       (void) llvm::createFixIrreduciblePass();
       (void)llvm::createSelectOptimizePass();

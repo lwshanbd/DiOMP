@@ -74,6 +74,10 @@ static Value *simplifyGEPInst(Type *, Value *, ArrayRef<Value *>, bool,
                               const SimplifyQuery &, unsigned);
 static Value *simplifySelectInst(Value *, Value *, Value *,
                                  const SimplifyQuery &, unsigned);
+static Value *simplifyInstructionWithOperands(Instruction *I,
+                                              ArrayRef<Value *> NewOps,
+                                              const SimplifyQuery &SQ,
+                                              unsigned MaxRecurse);
 
 static Value *foldSelectWithBinaryOp(Value *Cond, Value *TrueVal,
                                      Value *FalseVal) {
@@ -4206,6 +4210,11 @@ static Value *simplifyWithOpReplaced(Value *V, Value *Op, Value *RepOp,
   if (!I || !is_contained(I->operands(), Op))
     return nullptr;
 
+  // The arguments of a phi node might refer to a value from a previous
+  // cycle iteration.
+  if (isa<PHINode>(I))
+    return nullptr;
+
   if (Op->getType()->isVectorTy()) {
     // For vector types, the simplification must hold per-lane, so forbid
     // potentially cross-lane operations like shufflevector.
@@ -4270,23 +4279,8 @@ static Value *simplifyWithOpReplaced(Value *V, Value *Op, Value *RepOp,
       return Simplified != V ? Simplified : nullptr;
     };
 
-    if (auto *B = dyn_cast<BinaryOperator>(I))
-      return PreventSelfSimplify(simplifyBinOp(B->getOpcode(), NewOps[0],
-                                               NewOps[1], Q, MaxRecurse - 1));
-
-    if (CmpInst *C = dyn_cast<CmpInst>(I))
-      return PreventSelfSimplify(simplifyCmpInst(C->getPredicate(), NewOps[0],
-                                                 NewOps[1], Q, MaxRecurse - 1));
-
-    if (auto *GEP = dyn_cast<GetElementPtrInst>(I))
-      return PreventSelfSimplify(simplifyGEPInst(
-          GEP->getSourceElementType(), NewOps[0], ArrayRef(NewOps).slice(1),
-          GEP->isInBounds(), Q, MaxRecurse - 1));
-
-    if (isa<SelectInst>(I))
-      return PreventSelfSimplify(simplifySelectInst(
-          NewOps[0], NewOps[1], NewOps[2], Q, MaxRecurse - 1));
-    // TODO: We could hand off more cases to instsimplify here.
+    return PreventSelfSimplify(
+        ::simplifyInstructionWithOperands(I, NewOps, Q, MaxRecurse - 1));
   }
 
   // If all operands are constant after substituting Op for RepOp then we can
@@ -4443,6 +4437,24 @@ static Value *simplifySelectWithFakeICmpEq(Value *CmpLHS, Value *CmpRHS,
 }
 
 /// Try to simplify a select instruction when its condition operand is an
+/// integer equality comparison.
+static Value *simplifySelectWithICmpEq(Value *CmpLHS, Value *CmpRHS,
+                                       Value *TrueVal, Value *FalseVal,
+                                       const SimplifyQuery &Q,
+                                       unsigned MaxRecurse) {
+  if (simplifyWithOpReplaced(FalseVal, CmpLHS, CmpRHS, Q,
+                             /* AllowRefinement */ false,
+                             MaxRecurse) == TrueVal)
+    return FalseVal;
+  if (simplifyWithOpReplaced(TrueVal, CmpLHS, CmpRHS, Q,
+                             /* AllowRefinement */ true,
+                             MaxRecurse) == FalseVal)
+    return FalseVal;
+
+  return nullptr;
+}
+
+/// Try to simplify a select instruction when its condition operand is an
 /// integer comparison.
 static Value *simplifySelectWithICmpCond(Value *CondVal, Value *TrueVal,
                                          Value *FalseVal,
@@ -4530,35 +4542,38 @@ static Value *simplifySelectWithICmpCond(Value *CondVal, Value *TrueVal,
   // the arms of the select. See if substituting this value into the arm and
   // simplifying the result yields the same value as the other arm.
   if (Pred == ICmpInst::ICMP_EQ) {
-    if (simplifyWithOpReplaced(FalseVal, CmpLHS, CmpRHS, Q,
-                               /* AllowRefinement */ false,
-                               MaxRecurse) == TrueVal ||
-        simplifyWithOpReplaced(FalseVal, CmpRHS, CmpLHS, Q,
-                               /* AllowRefinement */ false,
-                               MaxRecurse) == TrueVal)
-      return FalseVal;
-    if (simplifyWithOpReplaced(TrueVal, CmpLHS, CmpRHS, Q,
-                               /* AllowRefinement */ true,
-                               MaxRecurse) == FalseVal ||
-        simplifyWithOpReplaced(TrueVal, CmpRHS, CmpLHS, Q,
-                               /* AllowRefinement */ true,
-                               MaxRecurse) == FalseVal)
-      return FalseVal;
-  }
+    if (Value *V = simplifySelectWithICmpEq(CmpLHS, CmpRHS, TrueVal, FalseVal,
+                                            Q, MaxRecurse))
+      return V;
+    if (Value *V = simplifySelectWithICmpEq(CmpRHS, CmpLHS, TrueVal, FalseVal,
+                                            Q, MaxRecurse))
+      return V;
 
-  if (Pred == ICmpInst::Predicate::ICMP_EQ) {
     Value *X;
     Value *Y;
-    // select(X | Y == 0, X or Y, X | Y) -> X | Y
-    if (match(CondVal, m_ICmp(Pred, m_Specific(FalseVal), m_Zero())) &&
-        match(FalseVal, m_Or(m_Value(X), m_Value(Y))) &&
-        (TrueVal == X || TrueVal == Y))
-      return FalseVal;
-    // select(X & Y == -1, X or Y, X & Y) -> X & Y
-    if (match(CondVal, m_ICmp(Pred, m_Specific(FalseVal), m_AllOnes())) &&
-        match(FalseVal, m_And(m_Value(X), m_Value(Y))) &&
-        (TrueVal == X || TrueVal == Y))
-      return FalseVal;
+    // select((X | Y) == 0 ?  X : 0) --> 0 (commuted 2 ways)
+    if (match(CmpLHS, m_Or(m_Value(X), m_Value(Y))) &&
+        match(CmpRHS, m_Zero())) {
+      // (X | Y) == 0 implies X == 0 and Y == 0.
+      if (Value *V = simplifySelectWithICmpEq(X, CmpRHS, TrueVal, FalseVal, Q,
+                                              MaxRecurse))
+        return V;
+      if (Value *V = simplifySelectWithICmpEq(Y, CmpRHS, TrueVal, FalseVal, Q,
+                                              MaxRecurse))
+        return V;
+    }
+
+    // select((X & Y) == -1 ?  X : -1) --> -1 (commuted 2 ways)
+    if (match(CmpLHS, m_And(m_Value(X), m_Value(Y))) &&
+        match(CmpRHS, m_AllOnes())) {
+      // (X & Y) == -1 implies X == -1 and Y == -1.
+      if (Value *V = simplifySelectWithICmpEq(X, CmpRHS, TrueVal, FalseVal, Q,
+                                              MaxRecurse))
+        return V;
+      if (Value *V = simplifySelectWithICmpEq(Y, CmpRHS, TrueVal, FalseVal, Q,
+                                              MaxRecurse))
+        return V;
+    }
   }
 
   return nullptr;
@@ -5220,8 +5235,8 @@ static Value *simplifyShuffleVectorInst(Value *Op0, Value *Op1,
                                         ArrayRef<int> Mask, Type *RetTy,
                                         const SimplifyQuery &Q,
                                         unsigned MaxRecurse) {
-  if (all_of(Mask, [](int Elem) { return Elem == UndefMaskElem; }))
-    return UndefValue::get(RetTy);
+  if (all_of(Mask, [](int Elem) { return Elem == PoisonMaskElem; }))
+    return PoisonValue::get(RetTy);
 
   auto *InVecTy = cast<VectorType>(Op0->getType());
   unsigned MaskNumElts = Mask.size();
@@ -5286,11 +5301,11 @@ static Value *simplifyShuffleVectorInst(Value *Op0, Value *Op1,
         })) {
       assert(isa<UndefValue>(Op1) && "Expected undef operand 1 for splat");
 
-      // Shuffle mask undefs become undefined constant result elements.
+      // Shuffle mask poisons become poison constant result elements.
       SmallVector<Constant *, 16> VecC(MaskNumElts, C);
       for (unsigned i = 0; i != MaskNumElts; ++i)
         if (Indices[i] == -1)
-          VecC[i] = UndefValue::get(C->getType());
+          VecC[i] = PoisonValue::get(C->getType());
       return ConstantVector::get(VecC);
     }
   }
@@ -6104,6 +6119,51 @@ static Value *foldMinMaxSharedOp(Intrinsic::ID IID, Value *Op0, Value *Op1) {
   return nullptr;
 }
 
+/// Given a min/max intrinsic, see if it can be removed based on having an
+/// operand that is another min/max intrinsic with shared operand(s). The caller
+/// is expected to swap the operand arguments to handle commutation.
+static Value *foldMinimumMaximumSharedOp(Intrinsic::ID IID, Value *Op0,
+                                         Value *Op1) {
+  assert((IID == Intrinsic::maxnum || IID == Intrinsic::minnum ||
+          IID == Intrinsic::maximum || IID == Intrinsic::minimum) &&
+         "Unsupported intrinsic");
+
+  auto *M0 = dyn_cast<IntrinsicInst>(Op0);
+  // If Op0 is not the same intrinsic as IID, do not process.
+  // This is a difference with integer min/max handling. We do not process the
+  // case like max(min(X,Y),min(X,Y)) => min(X,Y). But it can be handled by GVN.
+  if (!M0 || M0->getIntrinsicID() != IID)
+    return nullptr;
+  Value *X0 = M0->getOperand(0);
+  Value *Y0 = M0->getOperand(1);
+  // Simple case, m(m(X,Y), X) => m(X, Y)
+  //              m(m(X,Y), Y) => m(X, Y)
+  // For minimum/maximum, X is NaN => m(NaN, Y) == NaN and m(NaN, NaN) == NaN.
+  // For minimum/maximum, Y is NaN => m(X, NaN) == NaN  and m(NaN, NaN) == NaN.
+  // For minnum/maxnum, X is NaN => m(NaN, Y) == Y and m(Y, Y) == Y.
+  // For minnum/maxnum, Y is NaN => m(X, NaN) == X and m(X, NaN) == X.
+  if (X0 == Op1 || Y0 == Op1)
+    return M0;
+
+  auto *M1 = dyn_cast<IntrinsicInst>(Op1);
+  if (!M1)
+    return nullptr;
+  Value *X1 = M1->getOperand(0);
+  Value *Y1 = M1->getOperand(1);
+  Intrinsic::ID IID1 = M1->getIntrinsicID();
+  // we have a case m(m(X,Y),m'(X,Y)) taking into account m' is commutative.
+  // if m' is m or inversion of m => m(m(X,Y),m'(X,Y)) == m(X,Y).
+  // For minimum/maximum, X is NaN => m(NaN,Y) == m'(NaN, Y) == NaN.
+  // For minimum/maximum, Y is NaN => m(X,NaN) == m'(X, NaN) == NaN.
+  // For minnum/maxnum, X is NaN => m(NaN,Y) == m'(NaN, Y) == Y.
+  // For minnum/maxnum, Y is NaN => m(X,NaN) == m'(X, NaN) == X.
+  if ((X0 == X1 && Y0 == Y1) || (X0 == Y1 && Y0 == X1))
+    if (IID1 == IID || getInverseMinMaxIntrinsic(IID1) == IID)
+      return M0;
+
+  return nullptr;
+}
+
 static Value *simplifyBinaryIntrinsic(Function *F, Value *Op0, Value *Op1,
                                       const SimplifyQuery &Q) {
   Intrinsic::ID IID = F->getIntrinsicID();
@@ -6343,14 +6403,10 @@ static Value *simplifyBinaryIntrinsic(Function *F, Value *Op0, Value *Op1,
 
     // Min/max of the same operation with common operand:
     // m(m(X, Y)), X --> m(X, Y) (4 commuted variants)
-    if (auto *M0 = dyn_cast<IntrinsicInst>(Op0))
-      if (M0->getIntrinsicID() == IID &&
-          (M0->getOperand(0) == Op1 || M0->getOperand(1) == Op1))
-        return Op0;
-    if (auto *M1 = dyn_cast<IntrinsicInst>(Op1))
-      if (M1->getIntrinsicID() == IID &&
-          (M1->getOperand(0) == Op0 || M1->getOperand(1) == Op0))
-        return Op1;
+    if (Value *V = foldMinimumMaximumSharedOp(IID, Op0, Op1))
+      return V;
+    if (Value *V = foldMinimumMaximumSharedOp(IID, Op1, Op0))
+      return V;
 
     break;
   }

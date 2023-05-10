@@ -25,3 +25,10 @@ add_integration_test(
     --blocks 16
     --threads 1
 )
+
+add_integration_test(
+  init_fini_array_test
+  SUITE libc-startup-tests
+  SRCS
+    init_fini_array_test.cpp
+)

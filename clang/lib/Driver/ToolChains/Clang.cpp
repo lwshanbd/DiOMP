@@ -740,6 +740,12 @@ static void addPGOAndCoverageFlags(const ToolChain &TC, Compilation &C,
     PGOGenerateArg = nullptr;
   }
 
+  if (TC.getTriple().isOSAIX()) {
+    if (Arg *ProfileSampleUseArg = getLastProfileSampleUseArg(Args))
+      D.Diag(diag::err_drv_unsupported_opt_for_target)
+          << ProfileSampleUseArg->getSpelling() << TC.getTriple().str();
+  }
+
   if (ProfileGenerateArg) {
     if (ProfileGenerateArg->getOption().matches(
             options::OPT_fprofile_instr_generate_EQ))
@@ -1133,6 +1139,9 @@ void Clang::AddPreprocessingOptions(Compilation &C, const JobAction &JA,
     if (ArgM->getOption().matches(options::OPT_M) ||
         ArgM->getOption().matches(options::OPT_MD))
       CmdArgs.push_back("-sys-header-deps");
+    if (Args.hasFlag(options::OPT_canonical_prefixes,
+                     options::OPT_no_canonical_prefixes, true))
+      CmdArgs.push_back("-canonical-system-headers");
     if ((isa<PrecompileJobAction>(JA) &&
          !Args.hasArg(options::OPT_fno_module_file_deps)) ||
         Args.hasArg(options::OPT_fmodule_file_deps))
@@ -1976,6 +1985,7 @@ void Clang::AddMIPSTargetArgs(const ArgList &Args,
 
 void Clang::AddPPCTargetArgs(const ArgList &Args,
                              ArgStringList &CmdArgs) const {
+  const Driver &D = getToolChain().getDriver();
   const llvm::Triple &T = getToolChain().getTriple();
   if (Args.getLastArg(options::OPT_mtune_EQ)) {
     CmdArgs.push_back("-tune-cpu");
@@ -2003,13 +2013,22 @@ void Clang::AddPPCTargetArgs(const ArgList &Args,
   }
 
   bool IEEELongDouble = getToolChain().defaultToIEEELongDouble();
+  bool VecExtabi = false;
   for (const Arg *A : Args.filtered(options::OPT_mabi_EQ)) {
     StringRef V = A->getValue();
-    if (V == "ieeelongdouble")
+    if (V == "ieeelongdouble") {
       IEEELongDouble = true;
-    else if (V == "ibmlongdouble")
+      A->claim();
+    } else if (V == "ibmlongdouble") {
       IEEELongDouble = false;
-    else if (V != "altivec")
+      A->claim();
+    } else if (V == "vec-default") {
+      VecExtabi = false;
+      A->claim();
+    } else if (V == "vec-extabi") {
+      VecExtabi = true;
+      A->claim();
+    } else if (V != "altivec")
       // The ppc64 linux abis are all "altivec" abis by default. Accept and ignore
       // the option if given as we don't have backend support for any targets
       // that don't use the altivec abi.
@@ -2017,10 +2036,14 @@ void Clang::AddPPCTargetArgs(const ArgList &Args,
   }
   if (IEEELongDouble)
     CmdArgs.push_back("-mabi=ieeelongdouble");
+  if (VecExtabi) {
+    if (!T.isOSAIX())
+      D.Diag(diag::err_drv_unsupported_opt_for_target)
+          << "-mabi=vec-extabi" << T.str();
+    CmdArgs.push_back("-mabi=vec-extabi");
+  }
 
-  ppc::FloatABI FloatABI =
-      ppc::getPPCFloatABI(getToolChain().getDriver(), Args);
-
+  ppc::FloatABI FloatABI = ppc::getPPCFloatABI(D, Args);
   if (FloatABI == ppc::FloatABI::Soft) {
     // Floating point operations and argument passing are soft.
     CmdArgs.push_back("-msoft-float");
@@ -3650,7 +3673,8 @@ static bool RenderModulesOptions(Compilation &C, const Driver &D,
   bool HaveStdCXXModules =
       IsCXX && Std &&
       (Std->containsValue("c++2a") || Std->containsValue("c++20") ||
-       Std->containsValue("c++2b") || Std->containsValue("c++latest"));
+       Std->containsValue("c++2b") || Std->containsValue("c++23") ||
+       Std->containsValue("c++latest"));
   bool HaveModules = HaveStdCXXModules;
 
   // -fmodules enables the use of precompiled modules (off by default).
@@ -4010,6 +4034,13 @@ static void RenderDiagnosticsOptions(const Driver &D, const ArgList &Args,
           Args.getLastArg(options::OPT_fdiagnostics_hotness_threshold_EQ)) {
     std::string Opt =
         std::string("-fdiagnostics-hotness-threshold=") + A->getValue();
+    CmdArgs.push_back(Args.MakeArgString(Opt));
+  }
+
+  if (const Arg *A =
+          Args.getLastArg(options::OPT_fdiagnostics_misexpect_tolerance_EQ)) {
+    std::string Opt =
+        std::string("-fdiagnostics-misexpect-tolerance=") + A->getValue();
     CmdArgs.push_back(Args.MakeArgString(Opt));
   }
 
@@ -5193,27 +5224,6 @@ void Clang::ConstructJob(Compilation &C, const JobAction &JA,
 
   // LLVM Code Generator Options.
 
-  for (const Arg *A : Args.filtered(options::OPT_frewrite_map_file_EQ)) {
-    StringRef Map = A->getValue();
-    if (!llvm::sys::fs::exists(Map)) {
-      D.Diag(diag::err_drv_no_such_file) << Map;
-    } else {
-      A->render(Args, CmdArgs);
-      A->claim();
-    }
-  }
-
-  if (Arg *A = Args.getLastArg(options::OPT_mabi_EQ_vec_extabi,
-                               options::OPT_mabi_EQ_vec_default)) {
-    if (!Triple.isOSAIX())
-      D.Diag(diag::err_drv_unsupported_opt_for_target)
-          << A->getSpelling() << RawTriple.str();
-    if (A->getOption().getID() == options::OPT_mabi_EQ_vec_extabi)
-      CmdArgs.push_back("-mabi=vec-extabi");
-    else
-      CmdArgs.push_back("-mabi=vec-default");
-  }
-
   if (Arg *A = Args.getLastArg(options::OPT_mabi_EQ_quadword_atomics)) {
     if (!Triple.isOSAIX() || Triple.isPPC32())
       D.Diag(diag::err_drv_unsupported_opt_for_target)
@@ -5230,14 +5240,13 @@ void Clang::ConstructJob(Compilation &C, const JobAction &JA,
   }
 
   if (Arg *A = Args.getLastArg(options::OPT_Wframe_larger_than_EQ)) {
-    StringRef v = A->getValue();
-    // FIXME: Validate the argument here so we don't produce meaningless errors
-    // about -fwarn-stack-size=.
-    if (v.empty())
-      D.Diag(diag::err_drv_missing_argument) << A->getSpelling() << 1;
+    StringRef V = A->getValue(), V1 = V;
+    unsigned Size;
+    if (V1.consumeInteger(10, Size) || !V1.empty())
+      D.Diag(diag::err_drv_invalid_argument_to_option)
+          << V << A->getOption().getName();
     else
-      CmdArgs.push_back(Args.MakeArgString("-fwarn-stack-size=" + v));
-    A->claim();
+      CmdArgs.push_back(Args.MakeArgString("-fwarn-stack-size=" + V));
   }
 
   Args.addOptOutFlag(CmdArgs, options::OPT_fjump_tables,
@@ -6629,7 +6638,8 @@ void Clang::ConstructJob(Compilation &C, const JobAction &JA,
                              .Case("c++14", "-std=c++14")
                              .Case("c++17", "-std=c++17")
                              .Case("c++20", "-std=c++20")
-                             .Case("c++latest", "-std=c++2b")
+                             // TODO add c++23 when MSVC supports it.
+                             .Case("c++latest", "-std=c++23")
                              .Default("");
       if (LanguageStandard.empty())
         D.Diag(clang::diag::warn_drv_unused_argument)

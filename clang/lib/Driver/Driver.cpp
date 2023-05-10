@@ -12,6 +12,7 @@
 #include "ToolChains/AMDGPUOpenMP.h"
 #include "ToolChains/AVR.h"
 #include "ToolChains/Ananas.h"
+#include "ToolChains/Arch/RISCV.h"
 #include "ToolChains/BareMetal.h"
 #include "ToolChains/CSKYToolChain.h"
 #include "ToolChains/Clang.h"
@@ -689,8 +690,9 @@ static llvm::Triple computeTargetTriple(const Driver &D,
   // If target is RISC-V adjust the target triple according to
   // provided architecture name
   if (Target.isRISCV()) {
-    if ((A = Args.getLastArg(options::OPT_march_EQ))) {
-      StringRef ArchName = A->getValue();
+    if (Args.hasArg(options::OPT_march_EQ) ||
+        Args.hasArg(options::OPT_mcpu_EQ)) {
+      StringRef ArchName = tools::riscv::getRISCVArch(Args, Target);
       if (ArchName.startswith_insensitive("rv32"))
         Target.setArch(llvm::Triple::riscv32);
       else if (ArchName.startswith_insensitive("rv64"))
@@ -1393,8 +1395,9 @@ Compilation *Driver::BuildCompilation(ArrayRef<const char *> ArgList) {
   const Arg *Std = Args.getLastArg(options::OPT_std_EQ);
   ModulesModeCXX20 =
       !Args.hasArg(options::OPT_fmodules) && Std &&
-      (Std->containsValue("c++20") || Std->containsValue("c++2b") ||
-       Std->containsValue("c++2a") || Std->containsValue("c++latest"));
+      (Std->containsValue("c++20") || Std->containsValue("c++2a") ||
+       Std->containsValue("c++23") || Std->containsValue("c++2b") ||
+       Std->containsValue("c++latest"));
 
   // Process -fmodule-header{=} flags.
   if (Arg *A = Args.getLastArg(options::OPT_fmodule_header_EQ,
@@ -1808,9 +1811,6 @@ void Driver::generateCompilationDiagnostics(
           << "(choose the .crash file that corresponds to your crash)";
     }
   }
-
-  for (const auto &A : C.getArgs().filtered(options::OPT_frewrite_map_file_EQ))
-    Diag(clang::diag::note_drv_command_failed_diag_msg) << A->getValue();
 
   Diag(clang::diag::note_drv_command_failed_diag_msg)
       << "\n\n********************";

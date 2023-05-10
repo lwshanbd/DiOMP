@@ -2036,11 +2036,6 @@ defm delete_null_pointer_checks : BoolFOption<"delete-null-pointer-checks",
   PosFlag<SetFalse, [], "Treat usage of null pointers as undefined behavior (default)">,
   BothFlags<[CoreOption]>>;
 
-def frewrite_map_file_EQ : Joined<["-"], "frewrite-map-file=">,
-                           Group<f_Group>,
-                           Flags<[NoXarchOption, CC1Option]>,
-                           MarshallingInfoStringVector<CodeGenOpts<"RewriteMapFiles">>;
-
 defm use_line_directives : BoolFOption<"use-line-directives",
   PreprocessorOutputOpts<"UseLineDirectives">, DefaultFalse,
   PosFlag<SetTrue, [CC1Option], "Use #line in preprocessed output">, NegFlag<SetFalse>>;
@@ -3223,11 +3218,13 @@ def fdebug_default_version: Joined<["-"], "fdebug-default-version=">, Group<f_Gr
 def fdebug_prefix_map_EQ
   : Joined<["-"], "fdebug-prefix-map=">, Group<f_Group>,
     Flags<[CC1Option,CC1AsOption]>,
-    HelpText<"remap file source paths in debug info">;
+    MetaVarName<"<old>=<new>">,
+    HelpText<"For paths in debug info, remap directory <old> to <new>. If multiple options match a path, the last option wins">;
 def fcoverage_prefix_map_EQ
   : Joined<["-"], "fcoverage-prefix-map=">, Group<f_Group>,
     Flags<[CC1Option]>,
-    HelpText<"remap file source paths in coverage mapping">;
+    MetaVarName<"<old>=<new>">,
+    HelpText<"remap file source paths <old> to <new> in coverage mapping. If there are multiple options, prefix replacement is applied in reverse order starting from the last one">;
 def ffile_prefix_map_EQ
   : Joined<["-"], "ffile-prefix-map=">, Group<f_Group>,
     HelpText<"remap file source paths in debug info, predefined preprocessor "
@@ -3649,9 +3646,11 @@ def mcmodel_EQ_medany : Flag<["-"], "mcmodel=medany">, Group<m_Group>,
 def menable_experimental_extensions : Flag<["-"], "menable-experimental-extensions">, Group<m_Group>,
   HelpText<"Enable use of experimental RISC-V extensions.">;
 def mrvv_vector_bits_EQ : Joined<["-"], "mrvv-vector-bits=">, Group<m_Group>,
-  HelpText<"Specify the size in bits of an RVV vector register. Defaults to the"
-           " vector length agnostic value of \"scalable\". Also accepts \"zvl\""
-           " to use the value implied by -march/-mcpu (RISC-V only)">;
+  HelpText<"Specify the size in bits of an RVV vector register. Defaults to "
+           "the vector length agnostic value of \"scalable\". Accepts power of "
+           "2 values between 64 and 65536. Also accepts \"zvl\" "
+           "to use the value implied by -march/-mcpu. Value will be reflected "
+           "in __riscv_v_fixed_vlen preprocessor define (RISC-V only)">;
 
 def munaligned_access : Flag<["-"], "munaligned-access">, Group<m_arm_Features_Group>,
   HelpText<"Allow memory accesses to be unaligned (AArch32/AArch64 only)">;
@@ -3832,11 +3831,6 @@ def mno_prefixed: Flag<["-"], "mno-prefixed">, Group<m_ppc_Features_Group>;
 def mspe : Flag<["-"], "mspe">, Group<m_ppc_Features_Group>;
 def mno_spe : Flag<["-"], "mno-spe">, Group<m_ppc_Features_Group>;
 def mefpu2 : Flag<["-"], "mefpu2">, Group<m_ppc_Features_Group>;
-def mabi_EQ_vec_extabi : Flag<["-"], "mabi=vec-extabi">, Group<m_Group>, Flags<[CC1Option]>,
-  HelpText<"Enable the extended Altivec ABI on AIX (AIX only). Uses volatile and nonvolatile vector registers">,
-  MarshallingInfoFlag<LangOpts<"EnableAIXExtendedAltivecABI">>;
-def mabi_EQ_vec_default : Flag<["-"], "mabi=vec-default">, Group<m_Group>, Flags<[CC1Option]>,
-  HelpText<"Enable the default Altivec ABI on AIX (AIX only). Uses only volatile vector registers.">;
 def mabi_EQ_quadword_atomics : Flag<["-"], "mabi=quadword-atomics">,
   Group<m_Group>, Flags<[CC1Option]>,
   HelpText<"Enable quadword atomics ABI on AIX (AIX PPC64 only). Uses lqarx/stqcx. instructions.">,
@@ -3965,8 +3959,12 @@ def mno_outline_atomics : Flag<["-"], "mno-outline-atomics">, Group<f_clang_Grou
 def mno_implicit_float : Flag<["-"], "mno-implicit-float">, Group<m_Group>,
   HelpText<"Don't generate implicit floating point or vector instructions">;
 def mimplicit_float : Flag<["-"], "mimplicit-float">, Group<m_Group>;
-def mrecip : Flag<["-"], "mrecip">, Group<m_Group>;
+def mrecip : Flag<["-"], "mrecip">, Group<m_Group>,
+  HelpText<"Equivalent to '-mrecip=all'">;
 def mrecip_EQ : CommaJoined<["-"], "mrecip=">, Group<m_Group>, Flags<[CC1Option]>,
+  HelpText<"Control use of approximate reciprocal and reciprocal square root instructions followed by <n> iterations of "
+           "Newton-Raphson refinement. "
+           "<value> = ( ['!'] ['vec-'] ('rcp'|'sqrt') [('h'|'s'|'d')] [':'<n>] ) | 'all' | 'default' | 'none'">,
   MarshallingInfoStringVector<CodeGenOpts<"Reciprocals">>;
 def mprefer_vector_width_EQ : Joined<["-"], "mprefer-vector-width=">, Group<m_Group>, Flags<[CC1Option]>,
   HelpText<"Specifies preferred vector width for auto-vectorization. Defaults to 'none' which allows target specific decisions.">,
@@ -5633,6 +5631,9 @@ def mframe_pointer_EQ : Joined<["-"], "mframe-pointer=">,
 def mabi_EQ_ieeelongdouble : Flag<["-"], "mabi=ieeelongdouble">,
   HelpText<"Use IEEE 754 quadruple-precision for long double">,
   MarshallingInfoFlag<LangOpts<"PPCIEEELongDouble">>;
+def mabi_EQ_vec_extabi : Flag<["-"], "mabi=vec-extabi">,
+  HelpText<"Enable the extended Altivec ABI on AIX. Use volatile and nonvolatile vector registers">,
+  MarshallingInfoFlag<LangOpts<"EnableAIXExtendedAltivecABI">>;
 def mfloat_abi : Separate<["-"], "mfloat-abi">,
   HelpText<"The float ABI to use">,
   MarshallingInfoString<CodeGenOpts<"FloatABI">>;
@@ -5821,7 +5822,7 @@ def fexperimental_assignment_tracking_EQ : Joined<["-"], "fexperimental-assignme
   Group<f_Group>, CodeGenOpts<"EnableAssignmentTracking">,
   NormalizedValuesScope<"CodeGenOptions::AssignmentTrackingOpts">,
   Values<"disabled,enabled,forced">, NormalizedValues<["Disabled","Enabled","Forced"]>,
-  MarshallingInfoEnum<CodeGenOpts<"AssignmentTrackingMode">, "Disabled">;
+  MarshallingInfoEnum<CodeGenOpts<"AssignmentTrackingMode">, "Enabled">;
 
 } // let Flags = [CC1Option, NoDriverOption]
 
@@ -5834,6 +5835,9 @@ let Flags = [CC1Option, NoDriverOption] in {
 def sys_header_deps : Flag<["-"], "sys-header-deps">,
   HelpText<"Include system headers in dependency output">,
   MarshallingInfoFlag<DependencyOutputOpts<"IncludeSystemHeaders">>;
+def canonical_system_headers : Flag<["-"], "canonical-system-headers">,
+  HelpText<"Canonicalize system headers in dependency output">,
+  MarshallingInfoFlag<DependencyOutputOpts<"CanonicalSystemHeaders">>;
 def module_file_deps : Flag<["-"], "module-file-deps">,
   HelpText<"Include module files in dependency output">,
   MarshallingInfoFlag<DependencyOutputOpts<"IncludeModuleFiles">>;

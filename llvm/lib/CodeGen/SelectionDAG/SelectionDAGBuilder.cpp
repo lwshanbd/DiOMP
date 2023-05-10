@@ -1405,6 +1405,17 @@ void SelectionDAGBuilder::salvageUnresolvedDbgValue(DanglingDebugInfo &DDI) {
                     << "\n");
 }
 
+void SelectionDAGBuilder::handleKillDebugValue(DILocalVariable *Var,
+                                               DIExpression *Expr,
+                                               DebugLoc DbgLoc,
+                                               unsigned Order) {
+  Value *Poison = PoisonValue::get(Type::getInt1Ty(*Context));
+  DIExpression *NewExpr =
+      const_cast<DIExpression *>(DIExpression::convertToUndefExpression(Expr));
+  handleDebugValue(Poison, Var, NewExpr, DbgLoc, Order,
+                   /*IsVariadic*/ false);
+}
+
 bool SelectionDAGBuilder::handleDebugValue(ArrayRef<const Value *> Values,
                                            DILocalVariable *Var,
                                            DIExpression *Expr, DebugLoc DbgLoc,
@@ -6114,12 +6125,14 @@ void SelectionDAGBuilder::visitIntrinsicCall(const CallInst &I,
     return;
   }
   case Intrinsic::dbg_declare: {
+    const auto &DI = cast<DbgDeclareInst>(I);
     // Debug intrinsics are handled separately in assignment tracking mode.
-    if (AssignmentTrackingEnabled)
+    // Some intrinsics are handled right after Argument lowering.
+    if (AssignmentTrackingEnabled ||
+        FuncInfo.PreprocessedDbgDeclares.count(&DI))
       return;
     // Assume dbg.declare can not currently use DIArgList, i.e.
     // it is non-variadic.
-    const auto &DI = cast<DbgVariableIntrinsic>(I);
     assert(!DI.hasArgList() && "Only dbg.value should currently use DIArgList");
     DILocalVariable *Variable = DI.getVariable();
     DIExpression *Expression = DI.getExpression();
@@ -6137,29 +6150,6 @@ void SelectionDAGBuilder::visitIntrinsicCall(const CallInst &I,
     }
 
     bool isParameter = Variable->isParameter() || isa<Argument>(Address);
-
-    // Check if this variable can be described by a frame index, typically
-    // either as a static alloca or a byval parameter.
-    int FI = std::numeric_limits<int>::max();
-    if (const auto *AI =
-            dyn_cast<AllocaInst>(Address->stripInBoundsConstantOffsets())) {
-      if (AI->isStaticAlloca()) {
-        auto I = FuncInfo.StaticAllocaMap.find(AI);
-        if (I != FuncInfo.StaticAllocaMap.end())
-          FI = I->second;
-      }
-    } else if (const auto *Arg = dyn_cast<Argument>(
-                   Address->stripInBoundsConstantOffsets())) {
-      FI = FuncInfo.getArgumentFrameIndex(Arg);
-    }
-
-    // llvm.dbg.declare is handled as a frame index in the MachineFunction
-    // variable table.
-    if (FI != std::numeric_limits<int>::max()) {
-      LLVM_DEBUG(dbgs() << "Skipping " << DI
-                        << " (variable info stashed in MF side table)\n");
-      return;
-    }
 
     SDValue &N = NodeMap[Address];
     if (!N.getNode() && isa<Argument>(Address))
@@ -6226,11 +6216,14 @@ void SelectionDAGBuilder::visitIntrinsicCall(const CallInst &I,
     DILocalVariable *Variable = DI.getVariable();
     DIExpression *Expression = DI.getExpression();
     dropDanglingDebugInfo(Variable, Expression);
+
+    if (DI.isKillLocation()) {
+      handleKillDebugValue(Variable, Expression, DI.getDebugLoc(), SDNodeOrder);
+      return;
+    }
+
     SmallVector<Value *, 4> Values(DI.getValues());
     if (Values.empty())
-      return;
-
-    if (llvm::is_contained(Values, nullptr))
       return;
 
     bool IsVariadic = DI.hasArgList();

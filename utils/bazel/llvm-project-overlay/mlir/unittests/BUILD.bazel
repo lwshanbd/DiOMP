@@ -21,7 +21,6 @@ cc_test(
     deps = [
         "//llvm:Support",
         "//llvm:TestingSupport",
-        "//mlir:BreakpointManagers",
         "//mlir:Debug",
         "//mlir:IR",
         "//mlir:Support",
@@ -41,6 +40,7 @@ cc_test(
     deps = [
         "//llvm:Support",
         "//mlir:IR",
+        "//mlir:Parser",
         "//mlir:Support",
         "//mlir/test:TestDialect",
         "//third-party/unittest:gmock",

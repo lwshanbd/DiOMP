@@ -2209,13 +2209,19 @@ public:
 /// to produce efficient output IR, including which branches, basic-blocks and
 /// output IR instructions to generate, and their cost. VPlan holds a
 /// Hierarchical-CFG of VPBasicBlocks and VPRegionBlocks rooted at an Entry
-/// VPBlock.
+/// VPBasicBlock.
 class VPlan {
   friend class VPlanPrinter;
   friend class VPSlotTracker;
 
-  /// Hold the single entry to the Hierarchical CFG of the VPlan.
-  VPBlockBase *Entry;
+  /// Hold the single entry to the Hierarchical CFG of the VPlan, i.e. the
+  /// preheader of the vector loop.
+  VPBasicBlock *Entry;
+
+  /// VPBasicBlock corresponding to the original preheader. Used to place
+  /// VPExpandSCEV recipes for expressions used during skeleton creation and the
+  /// rest of VPlan execution.
+  VPBasicBlock *Preheader;
 
   /// Holds the VFs applicable to this VPlan.
   SmallSetVector<ElementCount, 2> VFs;
@@ -2253,13 +2259,40 @@ class VPlan {
   /// Values used outside the plan.
   MapVector<PHINode *, VPLiveOut *> LiveOuts;
 
+  /// Mapping from SCEVs to the VPValues representing their expansions.
+  /// NOTE: This mapping is temporary and will be removed once all users have
+  /// been modeled in VPlan directly.
+  DenseMap<const SCEV *, VPValue *> SCEVToExpansion;
+
 public:
-  VPlan(VPBlockBase *Entry = nullptr) : Entry(Entry) {
-    if (Entry)
-      Entry->setPlan(this);
+  /// Construct a VPlan with original preheader \p Preheader, trip count \p TC
+  /// and \p Entry to the plan. At the moment, \p Preheader and \p Entry need to
+  /// be disconnected, as the bypass blocks between them are not yet modeled in
+  /// VPlan.
+  VPlan(VPBasicBlock *Preheader, VPValue *TC, VPBasicBlock *Entry)
+      : VPlan(Preheader, Entry) {
+    TripCount = TC;
+  }
+
+  /// Construct a VPlan with original preheader \p Preheader and \p Entry to
+  /// the plan. At the moment, \p Preheader and \p Entry need to be
+  /// disconnected, as the bypass blocks between them are not yet modeled in
+  /// VPlan.
+  VPlan(VPBasicBlock *Preheader, VPBasicBlock *Entry)
+      : Entry(Entry), Preheader(Preheader) {
+    Entry->setPlan(this);
+    Preheader->setPlan(this);
+    assert(Preheader->getNumSuccessors() == 0 &&
+           Preheader->getNumPredecessors() == 0 &&
+           "preheader must be disconnected");
   }
 
   ~VPlan();
+
+  /// Create an initial VPlan with preheader and entry blocks. Creates a
+  /// VPExpandSCEVRecipe for \p TripCount and uses it as plan's trip count.
+  static VPlanPtr createInitialVPlan(const SCEV *TripCount,
+                                     ScalarEvolution &PSE);
 
   /// Prepare the plan for execution, setting up the required live-in values.
   void prepareToExecute(Value *TripCount, Value *VectorTripCount,
@@ -2269,19 +2302,12 @@ public:
   /// Generate the IR code for this VPlan.
   void execute(VPTransformState *State);
 
-  VPBlockBase *getEntry() { return Entry; }
-  const VPBlockBase *getEntry() const { return Entry; }
-
-  VPBlockBase *setEntry(VPBlockBase *Block) {
-    Entry = Block;
-    Block->setPlan(this);
-    return Entry;
-  }
+  VPBasicBlock *getEntry() { return Entry; }
+  const VPBasicBlock *getEntry() const { return Entry; }
 
   /// The trip count of the original loop.
-  VPValue *getOrCreateTripCount() {
-    if (!TripCount)
-      TripCount = new VPValue();
+  VPValue *getTripCount() const {
+    assert(TripCount && "trip count needs to be set before accessing it");
     return TripCount;
   }
 
@@ -2415,6 +2441,23 @@ public:
   const MapVector<PHINode *, VPLiveOut *> &getLiveOuts() const {
     return LiveOuts;
   }
+
+  VPValue *getSCEVExpansion(const SCEV *S) const {
+    auto I = SCEVToExpansion.find(S);
+    if (I == SCEVToExpansion.end())
+      return nullptr;
+    return I->second;
+  }
+
+  void addSCEVExpansion(const SCEV *S, VPValue *V) {
+    assert(SCEVToExpansion.find(S) == SCEVToExpansion.end() &&
+           "SCEV already expanded");
+    SCEVToExpansion[S] = V;
+  }
+
+  /// \return The block corresponding to the original preheader.
+  VPBasicBlock *getPreheader() { return Preheader; }
+  const VPBasicBlock *getPreheader() const { return Preheader; }
 
 private:
   /// Add to the given dominator tree the header block and every new basic block

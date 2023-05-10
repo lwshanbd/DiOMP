@@ -37,14 +37,16 @@ public:
 
   static TestLattice initialElement() { return TestLattice{}; }
   void transfer(const CFGElement &, TestLattice &L, Environment &E) {
-    E.logger().log([](llvm::raw_ostream &OS) { OS << "transfer()"; });
+    E.getDataflowAnalysisContext().getOptions().Log->log(
+        [](llvm::raw_ostream &OS) { OS << "transfer()"; });
     ++L.Elements;
   }
   void transferBranch(bool Branch, const Stmt *S, TestLattice &L,
                       Environment &E) {
-    E.logger().log([&](llvm::raw_ostream &OS) {
-      OS << "transferBranch(" << Branch << ")";
-    });
+    E.getDataflowAnalysisContext().getOptions().Log->log(
+        [&](llvm::raw_ostream &OS) {
+          OS << "transferBranch(" << Branch << ")";
+        });
     ++L.Branches;
   }
 };
@@ -176,6 +178,7 @@ TEST(LoggerTest, HTML) {
       << "has analysis point state";
   EXPECT_THAT(Logs[0], HasSubstr("transferBranch(0)")) << "has analysis logs";
   EXPECT_THAT(Logs[0], HasSubstr("LocToVal")) << "has built-in lattice dump";
+  EXPECT_THAT(Logs[0], HasSubstr("\"type\": \"int\"")) << "has value dump";
 }
 
 } // namespace

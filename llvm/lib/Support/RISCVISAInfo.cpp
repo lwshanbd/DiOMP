@@ -107,8 +107,10 @@ static const RISCVSupportedExtension SupportedExtensions[] = {
     {"zicbom", RISCVExtensionVersion{1, 0}},
     {"zicboz", RISCVExtensionVersion{1, 0}},
     {"zicbop", RISCVExtensionVersion{1, 0}},
+    {"zicntr", RISCVExtensionVersion{1, 0}},
     {"zicsr", RISCVExtensionVersion{2, 0}},
     {"zifencei", RISCVExtensionVersion{2, 0}},
+    {"zihpm", RISCVExtensionVersion{1, 0}},
 
     {"zawrs", RISCVExtensionVersion{1, 0}},
 
@@ -133,12 +135,16 @@ static const RISCVSupportedExtension SupportedExtensions[] = {
 };
 
 static const RISCVSupportedExtension SupportedExperimentalExtensions[] = {
+    {"smaia", RISCVExtensionVersion{1, 0}},
+    {"ssaia", RISCVExtensionVersion{1, 0}},
+
     {"zihintntl", RISCVExtensionVersion{0, 2}},
 
     {"zca", RISCVExtensionVersion{1, 0}},
     {"zcb", RISCVExtensionVersion{1, 0}},
     {"zcd", RISCVExtensionVersion{1, 0}},
     {"zcf", RISCVExtensionVersion{1, 0}},
+    {"zcmt", RISCVExtensionVersion{1, 0}},
     {"zfa", RISCVExtensionVersion{0, 2}},
     {"zicond", RISCVExtensionVersion{1, 0}},
     {"zvfh", RISCVExtensionVersion{0, 1}},
@@ -687,8 +693,6 @@ RISCVISAInfo::parseArchString(StringRef Arch, bool EnableExperimentalExtension,
   Exts = Exts.drop_front(ConsumeLength);
   Exts.consume_front("_");
 
-  // TODO: Use version number when setting target features
-
   auto StdExtsItr = StdExts.begin();
   auto StdExtsEnd = StdExts.end();
   auto GoToNextExt = [](StringRef::iterator &I, unsigned ConsumeLength) {
@@ -736,7 +740,6 @@ RISCVISAInfo::parseArchString(StringRef Arch, bool EnableExperimentalExtension,
     }
 
     // The order is OK, then push it into features.
-    // TODO: Use version number when setting target features
     // Currently LLVM supports only "mafdcvh".
     if (!isSupportedExtension(StringRef(&C, 1))) {
       if (IgnoreUnknown) {
@@ -849,6 +852,7 @@ RISCVISAInfo::parseArchString(StringRef Arch, bool EnableExperimentalExtension,
 }
 
 Error RISCVISAInfo::checkDependency() {
+  bool HasC = Exts.count("c") != 0;
   bool HasD = Exts.count("d") != 0;
   bool HasF = Exts.count("f") != 0;
   bool HasZfinx = Exts.count("zfinx") != 0;
@@ -857,6 +861,8 @@ Error RISCVISAInfo::checkDependency() {
   bool HasZve32f = Exts.count("zve32f") != 0;
   bool HasZve64d = Exts.count("zve64d") != 0;
   bool HasZvl = MinVLen != 0;
+  bool HasZcmt = Exts.count("zcmt") != 0;
+  bool HasZcd = Exts.count("zcd") != 0;
 
   if (HasF && HasZfinx)
     return createStringError(errc::invalid_argument,
@@ -906,6 +912,16 @@ Error RISCVISAInfo::checkDependency() {
         errc::invalid_argument,
         "'zvknhb' requires 'v' or 'zve64*' extension to also be specified");
 
+  if (HasZcmt && HasD && HasC)
+    return createStringError(
+        errc::invalid_argument,
+        "'zcmt' is incompatible with 'c' extension when 'd' extension is set");
+
+  if (HasZcmt && HasD && HasZcd)
+    return createStringError(errc::invalid_argument,
+                             "'zcmt' is incompatible with 'zcd' extension when "
+                             "'d' extension is set");
+
   // Additional dependency checks.
   // TODO: The 'q' extension requires rv64.
   // TODO: It is illegal to specify 'e' extensions with 'f' and 'd'.
@@ -919,6 +935,7 @@ static const char *ImpliedExtsV[] = {"zvl128b", "zve64d", "f", "d"};
 static const char *ImpliedExtsXTHeadVdot[] = {"v"};
 static const char *ImpliedExtsXsfvcp[] = {"zve32x"};
 static const char *ImpliedExtsZcb[] = {"zca"};
+static const char *ImpliedExtsZcmt[] = {"zca"};
 static const char *ImpliedExtsZdinx[] = {"zfinx"};
 static const char *ImpliedExtsZfa[] = {"f"};
 static const char *ImpliedExtsZfh[] = {"f"};
@@ -926,6 +943,8 @@ static const char *ImpliedExtsZfhmin[] = {"f"};
 static const char *ImpliedExtsZfinx[] = {"zicsr"};
 static const char *ImpliedExtsZhinx[] = {"zfinx"};
 static const char *ImpliedExtsZhinxmin[] = {"zfinx"};
+static const char *ImpliedExtsZicntr[] = {"zicsr"};
+static const char *ImpliedExtsZihpm[] = {"zicsr"};
 static const char *ImpliedExtsZk[] = {"zkn", "zkt", "zkr"};
 static const char *ImpliedExtsZkn[] = {"zbkb", "zbkc", "zbkx",
                                        "zkne", "zknd", "zknh"};
@@ -974,6 +993,7 @@ static constexpr ImpliedExtsEntry ImpliedExts[] = {
     {{"xsfvcp"}, {ImpliedExtsXsfvcp}},
     {{"xtheadvdot"}, {ImpliedExtsXTHeadVdot}},
     {{"zcb"}, {ImpliedExtsZcb}},
+    {{"zcmt"}, {ImpliedExtsZcmt}},
     {{"zdinx"}, {ImpliedExtsZdinx}},
     {{"zfa"}, {ImpliedExtsZfa}},
     {{"zfh"}, {ImpliedExtsZfh}},
@@ -981,6 +1001,8 @@ static constexpr ImpliedExtsEntry ImpliedExts[] = {
     {{"zfinx"}, {ImpliedExtsZfinx}},
     {{"zhinx"}, {ImpliedExtsZhinx}},
     {{"zhinxmin"}, {ImpliedExtsZhinxmin}},
+    {{"zicntr"}, {ImpliedExtsZicntr}},
+    {{"zihpm"}, {ImpliedExtsZihpm}},
     {{"zk"}, {ImpliedExtsZk}},
     {{"zkn"}, {ImpliedExtsZkn}},
     {{"zks"}, {ImpliedExtsZks}},

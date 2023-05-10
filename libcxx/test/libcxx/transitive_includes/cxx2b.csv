@@ -13,7 +13,6 @@ any cstring
 any initializer_list
 any limits
 any new
-any stdexcept
 any typeinfo
 any version
 array compare
@@ -71,6 +70,7 @@ chrono ctime
 chrono initializer_list
 chrono limits
 chrono locale
+chrono new
 chrono optional
 chrono ostream
 chrono ratio
@@ -79,7 +79,6 @@ chrono stdexcept
 chrono string
 chrono string_view
 chrono tuple
-chrono vector
 chrono version
 cinttypes cstdint
 cmath version
@@ -140,6 +139,7 @@ deque version
 exception cstddef
 exception cstdlib
 exception version
+execution cstddef
 execution version
 expected cstddef
 expected initializer_list
@@ -224,6 +224,7 @@ format cstdlib
 format initializer_list
 format limits
 format locale
+format new
 format optional
 format queue
 format stack
@@ -231,7 +232,6 @@ format stdexcept
 format string
 format string_view
 format tuple
-format vector
 format version
 forward_list compare
 forward_list cstddef
@@ -581,12 +581,12 @@ thread ctime
 thread iosfwd
 thread limits
 thread locale
+thread new
 thread ratio
 thread stdexcept
 thread string
 thread string_view
 thread tuple
-thread vector
 thread version
 tuple compare
 tuple cstddef
@@ -634,7 +634,6 @@ valarray cstdint
 valarray initializer_list
 valarray limits
 valarray new
-valarray stdexcept
 valarray version
 variant compare
 variant cstddef
