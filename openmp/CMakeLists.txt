@@ -128,5 +128,10 @@ add_subdirectory(libompd)
 # Build documentation
 add_subdirectory(docs)
 
+# Build DiOMP
+if (OPENMP_ENABLE_DIOMP)
+  add_subdirectory(diomp)
+endif()
+
 # Now that we have seen all testsuites, create the check-openmp target.
 construct_check_openmp_target()

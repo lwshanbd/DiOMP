@@ -8,8 +8,6 @@
 - Rank
   - Number of ranks
   - Rank of myself
-  - test
-
 
 ## Memory Model
 - Base Functions
