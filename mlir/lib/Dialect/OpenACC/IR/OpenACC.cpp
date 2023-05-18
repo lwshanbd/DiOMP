@@ -235,6 +235,18 @@ LogicalResult acc::UpdateDeviceOp::verify() {
   return success();
 }
 
+//===----------------------------------------------------------------------===//
+// UseDeviceOp
+//===----------------------------------------------------------------------===//
+LogicalResult acc::UseDeviceOp::verify() {
+  // Test for all clauses this operation can be decomposed from:
+  if (getDataClause() != acc::DataClause::acc_use_device)
+    return emitError(
+        "data clause associated with use_device operation must match its intent"
+        " or specify original clause this operation was decomposed from");
+  return success();
+}
+
 template <typename StructureOp>
 static ParseResult parseRegions(OpAsmParser &parser, OperationState &state,
                                 unsigned nRegions = 1) {
@@ -280,7 +292,118 @@ struct RemoveConstantIfCondition : public OpRewritePattern<OpTy> {
     return success();
   }
 };
+
+/// Replaces the given op with the contents of the given single-block region,
+/// using the operands of the block terminator to replace operation results.
+static void replaceOpWithRegion(PatternRewriter &rewriter, Operation *op,
+                                Region &region, ValueRange blockArgs = {}) {
+  assert(llvm::hasSingleElement(region) && "expected single-region block");
+  Block *block = &region.front();
+  Operation *terminator = block->getTerminator();
+  ValueRange results = terminator->getOperands();
+  rewriter.inlineBlockBefore(block, op, blockArgs);
+  rewriter.replaceOp(op, results);
+  rewriter.eraseOp(terminator);
+}
+
+/// Pattern to remove operation with region that have constant false `ifCond`
+/// and remove the condition from the operation if the `ifCond` is constant
+/// true.
+template <typename OpTy>
+struct RemoveConstantIfConditionWithRegion : public OpRewritePattern<OpTy> {
+  using OpRewritePattern<OpTy>::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(OpTy op,
+                                PatternRewriter &rewriter) const override {
+    // Early return if there is no condition.
+    Value ifCond = op.getIfCond();
+    if (!ifCond)
+      return failure();
+
+    IntegerAttr constAttr;
+    if (!matchPattern(ifCond, m_Constant(&constAttr)))
+      return failure();
+    if (constAttr.getInt())
+      rewriter.updateRootInPlace(op, [&]() { op.getIfCondMutable().erase(0); });
+    else
+      replaceOpWithRegion(rewriter, op, op.getRegion());
+
+    return success();
+  }
+};
+
 } // namespace
+
+//===----------------------------------------------------------------------===//
+// PrivateRecipeOp
+//===----------------------------------------------------------------------===//
+
+static LogicalResult verifyPrivateLikeRegion(Operation *op, Region &region,
+                                             StringRef regionName, Type type,
+                                             unsigned expectNbArg,
+                                             bool optionalRegion,
+                                             bool verifyYield) {
+  if (optionalRegion && region.empty())
+    return success();
+
+  if (region.empty())
+    return op->emitOpError() << "expects non-empty " << regionName << " region";
+  Block &firstBlock = region.front();
+  if (expectNbArg == 1 && (firstBlock.getNumArguments() != 1 ||
+                           firstBlock.getArgument(0).getType() != type))
+    return op->emitOpError() << "expects " << regionName
+                             << " region with one "
+                                "argument of the privatization type";
+  if (expectNbArg == 2 && (firstBlock.getNumArguments() != 2 ||
+                           firstBlock.getArgument(0).getType() != type))
+    return op->emitOpError() << "expects " << regionName
+                             << " region with two "
+                                "arguments of the privatization type";
+
+  if (verifyYield) {
+    for (YieldOp yieldOp : region.getOps<acc::YieldOp>()) {
+      if (yieldOp.getOperands().size() != 1 ||
+          yieldOp.getOperands().getTypes()[0] != type)
+        return op->emitOpError() << "expects " << regionName
+                                 << " region to "
+                                    "yield a value of the privatization type";
+    }
+  }
+  return success();
+}
+
+LogicalResult acc::PrivateRecipeOp::verifyRegions() {
+  if (failed(verifyPrivateLikeRegion(*this, getInitRegion(), "init", getType(),
+                                     1, /*optional=*/false,
+                                     /*verifyYield=*/true)))
+    return failure();
+  if (failed(verifyPrivateLikeRegion(*this, getDestroyRegion(), "destroy",
+                                     getType(), 1, /*optional=*/true,
+                                     /*verifyYield=*/false)))
+    return failure();
+  return success();
+}
+
+//===----------------------------------------------------------------------===//
+// FirstprivateRecipeOp
+//===----------------------------------------------------------------------===//
+
+LogicalResult acc::FirstprivateRecipeOp::verifyRegions() {
+  if (failed(verifyPrivateLikeRegion(*this, getInitRegion(), "init", getType(),
+                                     1, /*optional=*/false,
+                                     /*verifyYield=*/true)))
+    return failure();
+
+  if (failed(verifyPrivateLikeRegion(*this, getCopyRegion(), "copy", getType(),
+                                     2, /*optional=*/false,
+                                     /*verifyYield=*/false)))
+    return failure();
+  if (failed(verifyPrivateLikeRegion(*this, getDestroyRegion(), "destroy",
+                                     getType(), 1, /*optional=*/true,
+                                     /*verifyYield=*/false)))
+    return failure();
+  return success();
+}
 
 //===----------------------------------------------------------------------===//
 // ParallelOp
@@ -357,6 +480,26 @@ Value KernelsOp::getDataOperand(unsigned i) {
 
 LogicalResult acc::KernelsOp::verify() {
   return checkDataOperands<acc::KernelsOp>(*this, getDataClauseOperands());
+}
+
+//===----------------------------------------------------------------------===//
+// HostDataOp
+//===----------------------------------------------------------------------===//
+
+LogicalResult acc::HostDataOp::verify() {
+  if (getDataOperands().empty())
+    return emitError("at least one operand must appear on the host_data "
+                     "operation");
+
+  for (mlir::Value operand : getDataOperands())
+    if (!mlir::isa<acc::UseDeviceOp>(operand.getDefiningOp()))
+      return emitError("expect data entry operation as defining op");
+  return success();
+}
+
+void acc::HostDataOp::getCanonicalizationPatterns(RewritePatternSet &results,
+                                                  MLIRContext *context) {
+  results.add<RemoveConstantIfConditionWithRegion<HostDataOp>>(context);
 }
 
 //===----------------------------------------------------------------------===//

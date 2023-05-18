@@ -35,9 +35,9 @@ class SparseTensor_Attr<string name,
 def DimensionAttr :
     TypedAttrBase<
       Index, "IntegerAttr",
-      And<[CPred<"$_self.isa<::mlir::IntegerAttr>()">,
-           CPred<"$_self.cast<::mlir::IntegerAttr>().getType()"
-                 ".isa<::mlir::IndexType>()">]>,
+      And<[CPred<"::llvm::isa<::mlir::IntegerAttr>($_self)">,
+           CPred<"::llvm::isa<::mlir::IndexType>("
+                     "::llvm::cast<::mlir::IntegerAttr>($_self).getType())">]>,
       "dimension attribute"> {
   let returnType = [{::mlir::sparse_tensor::Dimension}];
   let convertFromStorage = [{$_self.getValue().getZExtValue()}];
@@ -46,9 +46,9 @@ def DimensionAttr :
 def LevelAttr :
     TypedAttrBase<
       Index, "IntegerAttr",
-      And<[CPred<"$_self.isa<::mlir::IntegerAttr>()">,
-           CPred<"$_self.cast<::mlir::IntegerAttr>().getType()"
-                 ".isa<::mlir::IndexType>()">]>,
+      And<[CPred<"::llvm::isa<::mlir::IntegerAttr>($_self)">,
+           CPred<"::llvm::isa<::mlir::IndexType>("
+                     "::llvm::cast<::mlir::IntegerAttr>($_self).getType())">]>,
       "level attribute"> {
   let returnType = [{::mlir::sparse_tensor::Level}];
   let convertFromStorage = [{$_self.getValue().getZExtValue()}];
@@ -266,7 +266,7 @@ def SparseTensorEncodingAttr : SparseTensor_Attr<"SparseTensorEncoding",
     ArrayRefParameter<
       "::mlir::sparse_tensor::DimLevelType",
       "level-types"
-      >: $dimLevelType,
+      >: $lvlTypes,
     // A permutation from (higher-ordering)-coordinates to level-coordinates.
     "AffineMap":$dimOrdering,
     // A mapping from dimension-coordinates to (higher-ordering)-coordinates.
@@ -283,12 +283,12 @@ def SparseTensorEncodingAttr : SparseTensor_Attr<"SparseTensorEncoding",
   );
 
   let builders = [
-    AttrBuilder<(ins "ArrayRef<::mlir::sparse_tensor::DimLevelType>":$dimLevelType,
+    AttrBuilder<(ins "ArrayRef<::mlir::sparse_tensor::DimLevelType>":$lvlTypes,
                      "AffineMap":$dimOrdering,
                      "AffineMap":$higherOrdering,
                      "unsigned":$posWidth,
                      "unsigned":$crdWidth), [{
-      return $_get($_ctxt, dimLevelType,
+      return $_get($_ctxt, lvlTypes,
                          dimOrdering,
                          higherOrdering,
                          posWidth,

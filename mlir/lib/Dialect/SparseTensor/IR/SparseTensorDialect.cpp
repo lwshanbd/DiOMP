@@ -9,6 +9,7 @@
 #include <utility>
 
 #include "mlir/Dialect/SparseTensor/IR/SparseTensor.h"
+#include "mlir/Dialect/SparseTensor/IR/SparseTensorStorageLayout.h"
 #include "mlir/Dialect/SparseTensor/IR/SparseTensorType.h"
 
 #include "mlir/Dialect/Arith/IR/Arith.h"
@@ -39,6 +40,139 @@ using namespace mlir::sparse_tensor;
 template <typename T>
 static inline Dimension getDimRank(T t) {
   return getRankedTensorType(t).getRank();
+}
+
+//===----------------------------------------------------------------------===//
+// StorageLayout
+//===----------------------------------------------------------------------===//
+
+static constexpr Level kInvalidLevel = -1u;
+static constexpr Level kInvalidFieldIndex = -1u;
+static constexpr FieldIndex kDataFieldStartingIdx = 0;
+
+void StorageLayout::foreachField(
+    llvm::function_ref<bool(FieldIndex, SparseTensorFieldKind, Level,
+                            DimLevelType)>
+        callback) const {
+#define RETURN_ON_FALSE(fidx, kind, lvl, dlt)                                  \
+  if (!(callback(fidx, kind, lvl, dlt)))                                       \
+    return;
+
+  const auto lvlTypes = enc.getLvlTypes();
+  const Level lvlRank = enc.getLvlRank();
+  const Level cooStart = getCOOStart(enc);
+  const Level end = cooStart == lvlRank ? cooStart : cooStart + 1;
+  FieldIndex fieldIdx = kDataFieldStartingIdx;
+  // Per-level storage.
+  for (Level l = 0; l < end; l++) {
+    const auto dlt = lvlTypes[l];
+    if (isCompressedDLT(dlt) || isCompressedWithHiDLT(dlt)) {
+      RETURN_ON_FALSE(fieldIdx++, SparseTensorFieldKind::PosMemRef, l, dlt);
+      RETURN_ON_FALSE(fieldIdx++, SparseTensorFieldKind::CrdMemRef, l, dlt);
+    } else if (isSingletonDLT(dlt)) {
+      RETURN_ON_FALSE(fieldIdx++, SparseTensorFieldKind::CrdMemRef, l, dlt);
+    } else {
+      assert(isDenseDLT(dlt)); // no fields
+    }
+  }
+  // The values array.
+  RETURN_ON_FALSE(fieldIdx++, SparseTensorFieldKind::ValMemRef, kInvalidLevel,
+                  DimLevelType::Undef);
+
+  // Put metadata at the end.
+  RETURN_ON_FALSE(fieldIdx++, SparseTensorFieldKind::StorageSpec, kInvalidLevel,
+                  DimLevelType::Undef);
+
+#undef RETURN_ON_FALSE
+}
+
+void sparse_tensor::foreachFieldAndTypeInSparseTensor(
+    SparseTensorType stt,
+    llvm::function_ref<bool(Type, FieldIndex, SparseTensorFieldKind, Level,
+                            DimLevelType)>
+        callback) {
+  assert(stt.hasEncoding());
+  // Construct the basic types.
+  const Type crdType = stt.getCrdType();
+  const Type posType = stt.getPosType();
+  const Type eltType = stt.getElementType();
+
+  const Type specType = StorageSpecifierType::get(stt.getEncoding());
+  // memref<? x pos>  positions
+  const Type posMemType = MemRefType::get({ShapedType::kDynamic}, posType);
+  // memref<? x crd>  coordinates
+  const Type crdMemType = MemRefType::get({ShapedType::kDynamic}, crdType);
+  // memref<? x eltType> values
+  const Type valMemType = MemRefType::get({ShapedType::kDynamic}, eltType);
+
+  StorageLayout(stt).foreachField(
+      [specType, posMemType, crdMemType, valMemType,
+       callback](FieldIndex fieldIdx, SparseTensorFieldKind fieldKind,
+                 Level lvl, DimLevelType dlt) -> bool {
+        switch (fieldKind) {
+        case SparseTensorFieldKind::StorageSpec:
+          return callback(specType, fieldIdx, fieldKind, lvl, dlt);
+        case SparseTensorFieldKind::PosMemRef:
+          return callback(posMemType, fieldIdx, fieldKind, lvl, dlt);
+        case SparseTensorFieldKind::CrdMemRef:
+          return callback(crdMemType, fieldIdx, fieldKind, lvl, dlt);
+        case SparseTensorFieldKind::ValMemRef:
+          return callback(valMemType, fieldIdx, fieldKind, lvl, dlt);
+        };
+        llvm_unreachable("unrecognized field kind");
+      });
+}
+
+unsigned StorageLayout::getNumFields() const {
+  unsigned numFields = 0;
+  foreachField([&numFields](FieldIndex, SparseTensorFieldKind, Level,
+                            DimLevelType) -> bool {
+    numFields++;
+    return true;
+  });
+  return numFields;
+}
+
+unsigned StorageLayout::getNumDataFields() const {
+  unsigned numFields = 0; // one value memref
+  foreachField([&numFields](FieldIndex fidx, SparseTensorFieldKind, Level,
+                            DimLevelType) -> bool {
+    if (fidx >= kDataFieldStartingIdx)
+      numFields++;
+    return true;
+  });
+  numFields -= 1; // the last field is StorageSpecifier
+  assert(numFields == getNumFields() - kDataFieldStartingIdx - 1);
+  return numFields;
+}
+
+std::pair<FieldIndex, unsigned>
+StorageLayout::getFieldIndexAndStride(SparseTensorFieldKind kind,
+                                      std::optional<Level> lvl) const {
+  FieldIndex fieldIdx = kInvalidFieldIndex;
+  unsigned stride = 1;
+  if (kind == SparseTensorFieldKind::CrdMemRef) {
+    assert(lvl.has_value());
+    const Level cooStart = getCOOStart(enc);
+    const Level lvlRank = enc.getLvlRank();
+    if (lvl.value() >= cooStart && lvl.value() < lvlRank) {
+      lvl = cooStart;
+      stride = lvlRank - cooStart;
+    }
+  }
+  foreachField([lvl, kind, &fieldIdx](FieldIndex fIdx,
+                                      SparseTensorFieldKind fKind, Level fLvl,
+                                      DimLevelType dlt) -> bool {
+    if ((lvl && fLvl == lvl.value() && kind == fKind) ||
+        (kind == fKind && fKind == SparseTensorFieldKind::ValMemRef)) {
+      fieldIdx = fIdx;
+      // Returns false to break the iteration.
+      return false;
+    }
+    return true;
+  });
+  assert(fieldIdx != kInvalidFieldIndex);
+  return std::pair<FieldIndex, unsigned>(fieldIdx, stride);
 }
 
 //===----------------------------------------------------------------------===//
@@ -130,23 +264,22 @@ Type SparseTensorEncodingAttr::getCrdType() const {
 }
 
 SparseTensorEncodingAttr SparseTensorEncodingAttr::withoutOrdering() const {
-  return SparseTensorEncodingAttr::get(getContext(), getDimLevelType(),
-                                       AffineMap(), AffineMap(), getPosWidth(),
+  return SparseTensorEncodingAttr::get(getContext(), getLvlTypes(), AffineMap(),
+                                       AffineMap(), getPosWidth(),
                                        getCrdWidth());
 }
 
 SparseTensorEncodingAttr SparseTensorEncodingAttr::withoutBitWidths() const {
-  return SparseTensorEncodingAttr::get(getContext(), getDimLevelType(),
-                                       getDimOrdering(), getHigherOrdering(), 0,
-                                       0);
+  return SparseTensorEncodingAttr::get(
+      getContext(), getLvlTypes(), getDimOrdering(), getHigherOrdering(), 0, 0);
 }
 
 bool SparseTensorEncodingAttr::isAllDense() const {
-  return !getImpl() || llvm::all_of(getDimLevelType(), isDenseDLT);
+  return !getImpl() || llvm::all_of(getLvlTypes(), isDenseDLT);
 }
 
 bool SparseTensorEncodingAttr::isAllOrdered() const {
-  return !getImpl() || llvm::all_of(getDimLevelType(), isOrderedDLT);
+  return !getImpl() || llvm::all_of(getLvlTypes(), isOrderedDLT);
 }
 
 bool SparseTensorEncodingAttr::hasIdDimOrdering() const {
@@ -155,14 +288,14 @@ bool SparseTensorEncodingAttr::hasIdDimOrdering() const {
 
 Level SparseTensorEncodingAttr::getLvlRank() const {
   assert(getImpl() && "Uninitialized SparseTensorEncodingAttr");
-  return getDimLevelType().size();
+  return getLvlTypes().size();
 }
 
 DimLevelType SparseTensorEncodingAttr::getLvlType(Level l) const {
   if (!getImpl())
     return DimLevelType::Dense;
   assert(l < getLvlRank() && "Level is out of bounds");
-  return getDimLevelType()[l];
+  return getLvlTypes()[l];
 }
 
 std::optional<uint64_t>
@@ -243,9 +376,8 @@ Attribute SparseTensorEncodingAttr::parse(AsmParser &parser, Type type) {
 
   StringRef attrName;
   // Exactly 6 keys.
-  SmallVector<StringRef, 6> keys = {"dimLevelType",   "dimOrdering",
-                                    "higherOrdering", "posWidth",
-                                    "crdWidth",       "slice"};
+  SmallVector<StringRef, 6> keys = {"lvlTypes", "dimOrdering", "higherOrdering",
+                                    "posWidth", "crdWidth",    "slice"};
   while (succeeded(parser.parseOptionalKeyword(&attrName))) {
     if (!llvm::is_contained(keys, attrName)) {
       parser.emitError(parser.getNameLoc(), "unexpected key: ") << attrName;
@@ -258,13 +390,13 @@ Attribute SparseTensorEncodingAttr::parse(AsmParser &parser, Type type) {
     // cost of the `is_contained` check above. Should instead use some
     // "find" function that returns the index into `keys` so that we can
     // dispatch on that instead.
-    if (attrName == "dimLevelType") {
+    if (attrName == "lvlTypes") {
       Attribute attr;
       RETURN_ON_FAIL(parser.parseAttribute(attr));
-      auto arrayAttr = attr.dyn_cast<ArrayAttr>();
+      auto arrayAttr = llvm::dyn_cast<ArrayAttr>(attr);
       ERROR_IF(!arrayAttr, "expected an array for dimension level types")
       for (auto i : arrayAttr) {
-        auto strAttr = i.dyn_cast<StringAttr>();
+        auto strAttr = llvm::dyn_cast<StringAttr>(i);
         ERROR_IF(!strAttr, "expected a string value in dimension level types")
         auto strVal = strAttr.getValue();
         if (auto optDLT = parseDLT(strVal)) {
@@ -279,25 +411,25 @@ Attribute SparseTensorEncodingAttr::parse(AsmParser &parser, Type type) {
     } else if (attrName == "dimOrdering") {
       Attribute attr;
       RETURN_ON_FAIL(parser.parseAttribute(attr))
-      auto affineAttr = attr.dyn_cast<AffineMapAttr>();
+      auto affineAttr = llvm::dyn_cast<AffineMapAttr>(attr);
       ERROR_IF(!affineAttr, "expected an affine map for dimension ordering")
       dimOrd = affineAttr.getValue();
     } else if (attrName == "higherOrdering") {
       Attribute attr;
       RETURN_ON_FAIL(parser.parseAttribute(attr))
-      auto affineAttr = attr.dyn_cast<AffineMapAttr>();
+      auto affineAttr = llvm::dyn_cast<AffineMapAttr>(attr);
       ERROR_IF(!affineAttr, "expected an affine map for higher ordering")
       higherOrd = affineAttr.getValue();
     } else if (attrName == "posWidth") {
       Attribute attr;
       RETURN_ON_FAIL(parser.parseAttribute(attr))
-      auto intAttr = attr.dyn_cast<IntegerAttr>();
+      auto intAttr = llvm::dyn_cast<IntegerAttr>(attr);
       ERROR_IF(!intAttr, "expected an integral position bitwidth")
       posWidth = intAttr.getInt();
     } else if (attrName == "crdWidth") {
       Attribute attr;
       RETURN_ON_FAIL(parser.parseAttribute(attr))
-      auto intAttr = attr.dyn_cast<IntegerAttr>();
+      auto intAttr = llvm::dyn_cast<IntegerAttr>(attr);
       ERROR_IF(!intAttr, "expected an integral index bitwidth")
       crdWidth = intAttr.getInt();
     } else if (attrName == "slice") {
@@ -305,7 +437,7 @@ Attribute SparseTensorEncodingAttr::parse(AsmParser &parser, Type type) {
       // Dispatches to DimSliceAttr to skip mnemonic
       bool finished = false;
       while (auto attr = SparseTensorDimSliceAttr::parse(parser, nullptr)) {
-        auto sliceAttr = attr.cast<SparseTensorDimSliceAttr>();
+        auto sliceAttr = llvm::cast<SparseTensorDimSliceAttr>(attr);
         slices.push_back(sliceAttr);
         if (parser.parseOptionalComma().failed()) {
           finished = true;
@@ -336,8 +468,8 @@ Attribute SparseTensorEncodingAttr::parse(AsmParser &parser, Type type) {
 
 void SparseTensorEncodingAttr::print(AsmPrinter &printer) const {
   // Print the struct-like storage in dictionary fashion.
-  printer << "<{ dimLevelType = [ ";
-  llvm::interleaveComma(getDimLevelType(), printer, [&](DimLevelType dlt) {
+  printer << "<{ lvlTypes = [ ";
+  llvm::interleaveComma(getLvlTypes(), printer, [&](DimLevelType dlt) {
     printer << "\"" << toMLIRString(dlt) << "\"";
   });
   printer << " ]";
@@ -366,7 +498,7 @@ void SparseTensorEncodingAttr::print(AsmPrinter &printer) const {
 
 LogicalResult SparseTensorEncodingAttr::verify(
     function_ref<InFlightDiagnostic()> emitError,
-    ArrayRef<DimLevelType> dimLevelType, AffineMap dimOrdering,
+    ArrayRef<DimLevelType> lvlTypes, AffineMap dimOrdering,
     AffineMap higherOrdering, unsigned posWidth, unsigned crdWidth,
     ArrayRef<SparseTensorDimSliceAttr> dimSlices) {
   if (!acceptBitWidth(posWidth))
@@ -378,7 +510,7 @@ LogicalResult SparseTensorEncodingAttr::verify(
   // the `getLvlRank` method is the length of the level-types array,
   // since it must always be provided and have full rank; therefore we
   // use that same source-of-truth here.
-  const Level lvlRank = dimLevelType.size();
+  const Level lvlRank = lvlTypes.size();
   if (lvlRank == 0)
     return emitError() << "expected a non-empty array for level types";
   if (dimOrdering) {
@@ -415,9 +547,9 @@ LogicalResult SparseTensorEncodingAttr::verifyEncoding(
     function_ref<InFlightDiagnostic()> emitError) const {
   // Check structural integrity.  In particular, this ensures that the
   // level-rank is coherent across all the fields.
-  RETURN_FAILURE_IF_FAILED(verify(emitError, getDimLevelType(),
-                                  getDimOrdering(), getHigherOrdering(),
-                                  getPosWidth(), getCrdWidth(), getDimSlices()))
+  RETURN_FAILURE_IF_FAILED(verify(emitError, getLvlTypes(), getDimOrdering(),
+                                  getHigherOrdering(), getPosWidth(),
+                                  getCrdWidth(), getDimSlices()))
   // Check integrity with tensor type specifics.  In particular, we
   // need only check that the dimension-rank of the tensor agrees with
   // the dimension-rank of the encoding.
@@ -442,9 +574,9 @@ LogicalResult SparseTensorEncodingAttr::verifyEncoding(
 
 SparseTensorEncodingAttr
 mlir::sparse_tensor::getSparseTensorEncoding(Type type) {
-  if (auto ttp = type.dyn_cast<RankedTensorType>())
-    return ttp.getEncoding().dyn_cast_or_null<SparseTensorEncodingAttr>();
-  if (auto mdtp = type.dyn_cast<StorageSpecifierType>())
+  if (auto ttp = llvm::dyn_cast<RankedTensorType>(type))
+    return llvm::dyn_cast_or_null<SparseTensorEncodingAttr>(ttp.getEncoding());
+  if (auto mdtp = llvm::dyn_cast<StorageSpecifierType>(type))
     return mdtp.getEncoding();
   return nullptr;
 }
@@ -496,14 +628,14 @@ RankedTensorType sparse_tensor::getCOOFromTypeWithOrdering(RankedTensorType rtt,
   // An unordered and non-unique compressed level at beginning.
   // If this is also the last level, then it is unique.
   lvlTypes.push_back(
-      *getDimLevelType(LevelFormat::Compressed, ordered, lvlRank == 1));
+      *buildLevelType(LevelFormat::Compressed, ordered, lvlRank == 1));
   if (lvlRank > 1) {
     // TODO: it is actually ordered at the level for ordered input.
     // Followed by unordered non-unique n-2 singleton levels.
     std::fill_n(std::back_inserter(lvlTypes), lvlRank - 2,
-                *getDimLevelType(LevelFormat::Singleton, ordered, false));
+                *buildLevelType(LevelFormat::Singleton, ordered, false));
     // Ends by a unique singleton level unless the lvlRank is 1.
-    lvlTypes.push_back(*getDimLevelType(LevelFormat::Singleton, ordered, true));
+    lvlTypes.push_back(*buildLevelType(LevelFormat::Singleton, ordered, true));
   }
 
   // TODO: Maybe pick the bitwidth based on input/output tensors (probably the
@@ -580,8 +712,8 @@ Level mlir::sparse_tensor::toStoredDim(RankedTensorType type, Dimension d) {
 static SparseTensorEncodingAttr
 getNormalizedEncodingForSpecifier(SparseTensorEncodingAttr enc) {
   SmallVector<DimLevelType> dlts;
-  for (auto dlt : enc.getDimLevelType())
-    dlts.push_back(*getDimLevelType(*getLevelFormat(dlt), true, true));
+  for (auto dlt : enc.getLvlTypes())
+    dlts.push_back(*buildLevelType(*getLevelFormat(dlt), true, true));
 
   return SparseTensorEncodingAttr::get(
       enc.getContext(), dlts,
@@ -725,12 +857,12 @@ unsigned UnpackOp::getNumBatchedLvls() {
 }
 
 LogicalResult ConvertOp::verify() {
-  if (auto tp1 = getSource().getType().dyn_cast<RankedTensorType>()) {
-    if (auto tp2 = getDest().getType().dyn_cast<RankedTensorType>()) {
+  if (auto tp1 = llvm::dyn_cast<RankedTensorType>(getSource().getType())) {
+    if (auto tp2 = llvm::dyn_cast<RankedTensorType>(getDest().getType())) {
       if (tp1.getRank() != tp2.getRank())
         return emitError("unexpected conversion mismatch in rank");
       auto dstEnc =
-          tp2.getEncoding().dyn_cast_or_null<SparseTensorEncodingAttr>();
+          llvm::dyn_cast_or_null<SparseTensorEncodingAttr>(tp2.getEncoding());
       if (dstEnc && dstEnc.isSlice())
         return emitError("cannot convert to a sparse tensor slice");
 

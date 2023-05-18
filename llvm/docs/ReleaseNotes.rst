@@ -118,6 +118,8 @@ Changes to the Hexagon Backend
 Changes to the LoongArch Backend
 --------------------------------
 
+* The `lp64s` ABI is supported now and has been tested on Rust bare-matal target.
+
 Changes to the MIPS Backend
 ---------------------------
 
@@ -192,6 +194,11 @@ Changes to the X86 Backend
 
 Changes to the OCaml bindings
 -----------------------------
+
+Changes to the Python bindings
+------------------------------
+
+* The python bindings have been removed.
 
 
 Changes to the C API

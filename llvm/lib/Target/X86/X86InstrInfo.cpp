@@ -3204,6 +3204,65 @@ bool X86InstrInfo::analyzeBranch(MachineBasicBlock &MBB,
   return AnalyzeBranchImpl(MBB, TBB, FBB, Cond, CondBranches, AllowModify);
 }
 
+static int getJumpTableIndexFromAddr(const MachineInstr &MI) {
+  const MCInstrDesc &Desc = MI.getDesc();
+  int MemRefBegin = X86II::getMemoryOperandNo(Desc.TSFlags);
+  assert(MemRefBegin >= 0 && "instr should have memory operand");
+  MemRefBegin += X86II::getOperandBias(Desc);
+
+  const MachineOperand &MO = MI.getOperand(MemRefBegin + X86::AddrDisp);
+  if (!MO.isJTI())
+    return -1;
+
+  return MO.getIndex();
+}
+
+static int getJumpTableIndexFromReg(const MachineRegisterInfo &MRI,
+                                    Register Reg) {
+  if (!Reg.isVirtual())
+    return -1;
+  MachineInstr *MI = MRI.getUniqueVRegDef(Reg);
+  if (MI == nullptr)
+    return -1;
+  unsigned Opcode = MI->getOpcode();
+  if (Opcode != X86::LEA64r && Opcode != X86::LEA32r)
+    return -1;
+  return getJumpTableIndexFromAddr(*MI);
+}
+
+int X86InstrInfo::getJumpTableIndex(const MachineInstr &MI) const {
+  unsigned Opcode = MI.getOpcode();
+  // Switch-jump pattern for non-PIC code looks like:
+  //   JMP64m $noreg, 8, %X, %jump-table.X, $noreg
+  if (Opcode == X86::JMP64m || Opcode == X86::JMP32m) {
+    return getJumpTableIndexFromAddr(MI);
+  }
+  // The pattern for PIC code looks like:
+  //   %0 = LEA64r $rip, 1, $noreg, %jump-table.X
+  //   %1 = MOVSX64rm32 %0, 4, XX, 0, $noreg
+  //   %2 = ADD64rr %1, %0
+  //   JMP64r %2
+  if (Opcode == X86::JMP64r || Opcode == X86::JMP32r) {
+    Register Reg = MI.getOperand(0).getReg();
+    if (!Reg.isVirtual())
+      return -1;
+    const MachineFunction &MF = *MI.getParent()->getParent();
+    const MachineRegisterInfo &MRI = MF.getRegInfo();
+    MachineInstr *Add = MRI.getUniqueVRegDef(Reg);
+    if (Add == nullptr)
+      return -1;
+    if (Add->getOpcode() != X86::ADD64rr && Add->getOpcode() != X86::ADD32rr)
+      return -1;
+    int JTI1 = getJumpTableIndexFromReg(MRI, Add->getOperand(1).getReg());
+    if (JTI1 >= 0)
+      return JTI1;
+    int JTI2 = getJumpTableIndexFromReg(MRI, Add->getOperand(2).getReg());
+    if (JTI2 >= 0)
+      return JTI2;
+  }
+  return -1;
+}
+
 bool X86InstrInfo::analyzeBranchPredicate(MachineBasicBlock &MBB,
                                           MachineBranchPredicate &MBP,
                                           bool AllowModify) const {
@@ -4197,9 +4256,6 @@ inline static bool isDefConvertible(const MachineInstr &MI, bool &NoSignFlag,
   case X86::SBB16rr:   case X86::SBB8rr:   case X86::SBB64rm:
   case X86::SBB32rm:   case X86::SBB16rm:  case X86::SBB8rm:
   case X86::NEG8r:     case X86::NEG16r:   case X86::NEG32r: case X86::NEG64r:
-  case X86::SAR8r1:    case X86::SAR16r1:  case X86::SAR32r1:case X86::SAR64r1:
-  case X86::SHR8r1:    case X86::SHR16r1:  case X86::SHR32r1:case X86::SHR64r1:
-  case X86::SHL8r1:    case X86::SHL16r1:  case X86::SHL32r1:case X86::SHL64r1:
   case X86::LZCNT16rr: case X86::LZCNT16rm:
   case X86::LZCNT32rr: case X86::LZCNT32rm:
   case X86::LZCNT64rr: case X86::LZCNT64rm:
