@@ -356,8 +356,19 @@ struct KnownFPClass {
   }
 
   void fabs() {
-    KnownFPClasses &= (fcPositive | fcNan);
-    SignBit = false;
+    if (KnownFPClasses & fcNegZero)
+      KnownFPClasses |= fcPosZero;
+
+    if (KnownFPClasses & fcNegInf)
+      KnownFPClasses |= fcPosInf;
+
+    if (KnownFPClasses & fcNegSubnormal)
+      KnownFPClasses |= fcPosSubnormal;
+
+    if (KnownFPClasses & fcNegNormal)
+      KnownFPClasses |= fcPosNormal;
+
+    signBitMustBeZero();
   }
 
   /// Return true if the sign bit must be 0, ignoring the sign of nans.
@@ -934,6 +945,13 @@ bool canCreatePoison(const Operator *Op, bool ConsiderFlagsAndMetadata = true);
 /// For example, if ValAssumedPoison is `icmp X, 10` and V is `icmp X, 5`,
 /// impliesPoison returns true.
 bool impliesPoison(const Value *ValAssumedPoison, const Value *V);
+
+/// Return true if V is poison given that ValAssumedPoison is already poison.
+/// Poison generating flags or metadata are ignored in the process of implying.
+/// And the ignored instructions will be recorded in IgnoredInsts.
+bool impliesPoisonIgnoreFlagsOrMetadata(
+    Value *ValAssumedPoison, const Value *V,
+    SmallVectorImpl<Instruction *> &IgnoredInsts);
 
 /// Return true if this function can prove that V does not have undef bits
 /// and is never poison. If V is an aggregate value or vector, check whether

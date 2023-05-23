@@ -18,6 +18,7 @@
 #include "MCTargetDesc/X86ShuffleDecode.h"
 #include "MCTargetDesc/X86TargetStreamer.h"
 #include "X86AsmPrinter.h"
+#include "X86MachineFunctionInfo.h"
 #include "X86RegisterInfo.h"
 #include "X86ShuffleDecodeConstantPool.h"
 #include "X86Subtarget.h"
@@ -405,7 +406,7 @@ void X86MCInstLower::Lower(const MachineInstr *MI, MCInst &OutMI) const {
       X86::optimizeVPCMPWithImmediateOneOrSix(OutMI) ||
       X86::optimizeMOVSX(OutMI) || X86::optimizeINCDEC(OutMI, In64BitMode) ||
       X86::optimizeMOV(OutMI, In64BitMode) ||
-      X86::optimizeToFixedRegisterForm(OutMI))
+      X86::optimizeToFixedRegisterOrShortImmediateForm(OutMI))
     return;
 
   // Handle a few special cases to eliminate operand modifiers.
@@ -2118,6 +2119,7 @@ void X86AsmPrinter::emitInstruction(const MachineInstr *MI) {
 
     if (HasActiveDwarfFrame && !hasFP) {
       OutStreamer->emitCFIAdjustCfaOffset(-stackGrowth);
+      MF->getInfo<X86MachineFunctionInfo>()->setHasCFIAdjustCfa(true);
     }
 
     // Emit the label.

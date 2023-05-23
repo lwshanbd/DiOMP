@@ -338,27 +338,21 @@ struct RemoveConstantIfConditionWithRegion : public OpRewritePattern<OpTy> {
 // PrivateRecipeOp
 //===----------------------------------------------------------------------===//
 
-static LogicalResult verifyPrivateLikeRegion(Operation *op, Region &region,
-                                             StringRef regionName, Type type,
-                                             unsigned expectNbArg,
-                                             bool optionalRegion,
-                                             bool verifyYield) {
-  if (optionalRegion && region.empty())
+static LogicalResult verifyInitLikeSingleArgRegion(
+    Operation *op, Region &region, StringRef regionType, StringRef regionName,
+    Type type, bool verifyYield, bool optional = false) {
+  if (optional && region.empty())
     return success();
 
   if (region.empty())
     return op->emitOpError() << "expects non-empty " << regionName << " region";
   Block &firstBlock = region.front();
-  if (expectNbArg == 1 && (firstBlock.getNumArguments() != 1 ||
-                           firstBlock.getArgument(0).getType() != type))
+  if (firstBlock.getNumArguments() != 1 ||
+      firstBlock.getArgument(0).getType() != type)
     return op->emitOpError() << "expects " << regionName
                              << " region with one "
-                                "argument of the privatization type";
-  if (expectNbArg == 2 && (firstBlock.getNumArguments() != 2 ||
-                           firstBlock.getArgument(0).getType() != type))
-    return op->emitOpError() << "expects " << regionName
-                             << " region with two "
-                                "arguments of the privatization type";
+                                "argument of the "
+                             << regionType << " type";
 
   if (verifyYield) {
     for (YieldOp yieldOp : region.getOps<acc::YieldOp>()) {
@@ -366,20 +360,21 @@ static LogicalResult verifyPrivateLikeRegion(Operation *op, Region &region,
           yieldOp.getOperands().getTypes()[0] != type)
         return op->emitOpError() << "expects " << regionName
                                  << " region to "
-                                    "yield a value of the privatization type";
+                                    "yield a value of the "
+                                 << regionType << " type";
     }
   }
   return success();
 }
 
 LogicalResult acc::PrivateRecipeOp::verifyRegions() {
-  if (failed(verifyPrivateLikeRegion(*this, getInitRegion(), "init", getType(),
-                                     1, /*optional=*/false,
-                                     /*verifyYield=*/true)))
+  if (failed(verifyInitLikeSingleArgRegion(*this, getInitRegion(),
+                                           "privatization", "init", getType(),
+                                           /*verifyYield=*/true)))
     return failure();
-  if (failed(verifyPrivateLikeRegion(*this, getDestroyRegion(), "destroy",
-                                     getType(), 1, /*optional=*/true,
-                                     /*verifyYield=*/false)))
+  if (failed(verifyInitLikeSingleArgRegion(
+          *this, getDestroyRegion(), "privatization", "destroy", getType(),
+          /*verifyYield=*/false, /*optional=*/true)))
     return failure();
   return success();
 }
@@ -389,20 +384,93 @@ LogicalResult acc::PrivateRecipeOp::verifyRegions() {
 //===----------------------------------------------------------------------===//
 
 LogicalResult acc::FirstprivateRecipeOp::verifyRegions() {
-  if (failed(verifyPrivateLikeRegion(*this, getInitRegion(), "init", getType(),
-                                     1, /*optional=*/false,
-                                     /*verifyYield=*/true)))
+  if (failed(verifyInitLikeSingleArgRegion(*this, getInitRegion(),
+                                           "privatization", "init", getType(),
+                                           /*verifyYield=*/true)))
     return failure();
 
-  if (failed(verifyPrivateLikeRegion(*this, getCopyRegion(), "copy", getType(),
-                                     2, /*optional=*/false,
-                                     /*verifyYield=*/false)))
+  if (getCopyRegion().empty())
+    return emitOpError() << "expects non-empty copy region";
+
+  Block &firstBlock = getCopyRegion().front();
+  if (firstBlock.getNumArguments() != 2 ||
+      firstBlock.getArgument(0).getType() != getType())
+    return emitOpError() << "expects copy region with two arguments of the "
+                            "privatization type";
+
+  if (failed(verifyInitLikeSingleArgRegion(*this, getDestroyRegion(),
+                                           "privatization", "destroy",
+                                           getType(), /*verifyYield=*/false)))
     return failure();
-  if (failed(verifyPrivateLikeRegion(*this, getDestroyRegion(), "destroy",
-                                     getType(), 1, /*optional=*/true,
-                                     /*verifyYield=*/false)))
-    return failure();
+
   return success();
+}
+
+//===----------------------------------------------------------------------===//
+// ReductionRecipeOp
+//===----------------------------------------------------------------------===//
+
+LogicalResult acc::ReductionRecipeOp::verifyRegions() {
+  if (failed(verifyInitLikeSingleArgRegion(*this, getInitRegion(), "reduction",
+                                           "init", getType(),
+                                           /*verifyYield=*/true)))
+    return failure();
+
+  if (getCombinerRegion().empty())
+    return emitOpError() << "expects non-empty combiner region";
+
+  Block &reductionBlock = getCombinerRegion().front();
+  if (reductionBlock.getNumArguments() != 2 ||
+      reductionBlock.getArgument(0).getType() != getType() ||
+      reductionBlock.getArgument(1).getType() != getType())
+    return emitOpError() << "expects combiner region with two arguments of "
+                         << "the reduction type";
+
+  for (YieldOp yieldOp : getCombinerRegion().getOps<YieldOp>()) {
+    if (yieldOp.getOperands().size() != 1 ||
+        yieldOp.getOperands().getTypes()[0] != getType())
+      return emitOpError() << "expects combiner region to yield a value "
+                              "of the reduction type";
+  }
+
+  return success();
+}
+
+//===----------------------------------------------------------------------===//
+// Custom parser and printer verifier for private clause
+//===----------------------------------------------------------------------===//
+
+static ParseResult parsePrivatizationList(
+    mlir::OpAsmParser &parser,
+    llvm::SmallVectorImpl<mlir::OpAsmParser::UnresolvedOperand> &operands,
+    llvm::SmallVectorImpl<Type> &types, mlir::ArrayAttr &privatizationSymbols) {
+  llvm::SmallVector<SymbolRefAttr> privatizationVec;
+  if (failed(parser.parseCommaSeparatedList([&]() {
+        if (parser.parseAttribute(privatizationVec.emplace_back()) ||
+            parser.parseArrow() ||
+            parser.parseOperand(operands.emplace_back()) ||
+            parser.parseColonType(types.emplace_back()))
+          return failure();
+        return success();
+      })))
+    return failure();
+  llvm::SmallVector<mlir::Attribute> privatizations(privatizationVec.begin(),
+                                                    privatizationVec.end());
+  privatizationSymbols = ArrayAttr::get(parser.getContext(), privatizations);
+  return success();
+}
+
+static void
+printPrivatizationList(mlir::OpAsmPrinter &p, mlir::Operation *op,
+                       mlir::OperandRange privateOperands,
+                       mlir::TypeRange privateTypes,
+                       std::optional<mlir::ArrayAttr> privatizations) {
+  for (unsigned i = 0, e = privatizations->size(); i < e; ++i) {
+    if (i != 0)
+      p << ", ";
+    p << (*privatizations)[i] << " -> " << privateOperands[i] << " : "
+      << privateOperands[i].getType();
+  }
 }
 
 //===----------------------------------------------------------------------===//
@@ -424,6 +492,45 @@ static LogicalResult checkDataOperands(Op op,
   return success();
 }
 
+static LogicalResult
+checkPrivatizationList(Operation *op,
+                       std::optional<mlir::ArrayAttr> privatizations,
+                       mlir::OperandRange privateOperands) {
+  if (!privateOperands.empty()) {
+    if (!privatizations || privatizations->size() != privateOperands.size())
+      return op->emitOpError() << "expected as many privatizations symbol "
+                                  "reference as private operands";
+  } else {
+    if (privatizations)
+      return op->emitOpError() << "unexpected privatizations symbol reference";
+    return success();
+  }
+
+  llvm::DenseSet<Value> privates;
+  for (auto args : llvm::zip(privateOperands, *privatizations)) {
+    mlir::Value privateOperand = std::get<0>(args);
+
+    if (!privates.insert(privateOperand).second)
+      return op->emitOpError() << "private operand appears more than once";
+
+    mlir::Type varType = privateOperand.getType();
+    auto symbolRef = std::get<1>(args).cast<SymbolRefAttr>();
+    auto decl =
+        SymbolTable::lookupNearestSymbolFrom<PrivateRecipeOp>(op, symbolRef);
+    if (!decl)
+      return op->emitOpError() << "expected symbol reference " << symbolRef
+                               << " to point to a private declaration";
+
+    if (decl.getType() && decl.getType() != varType)
+      return op->emitOpError()
+             << "expected private (" << varType
+             << ") to be the same type as private declaration ("
+             << decl.getType() << ")";
+  }
+
+  return success();
+}
+
 unsigned ParallelOp::getNumDataOperands() {
   return getReductionOperands().size() + getGangPrivateOperands().size() +
          getGangFirstPrivateOperands().size() + getDataClauseOperands().size();
@@ -440,6 +547,9 @@ Value ParallelOp::getDataOperand(unsigned i) {
 }
 
 LogicalResult acc::ParallelOp::verify() {
+  if (failed(checkPrivatizationList(*this, getPrivatizations(),
+                                    getGangPrivateOperands())))
+    return failure();
   return checkDataOperands<acc::ParallelOp>(*this, getDataClauseOperands());
 }
 
@@ -615,6 +725,10 @@ LogicalResult acc::LoopOp::verify() {
   // Gang, worker and vector are incompatible with seq.
   if (getSeq() && (getHasGang() || getHasWorker() || getHasVector()))
     return emitError("gang, worker or vector cannot appear with the seq attr");
+
+  if (failed(checkPrivatizationList(*this, getPrivatizations(),
+                                    getPrivateOperands())))
+    return failure();
 
   // Check non-empty body().
   if (getRegion().empty())

@@ -846,9 +846,6 @@ MCSectionSPIRV *MCContext::getSPIRVSection() {
   Result->getFragmentList().insert(Result->begin(), F);
   F->setParent(Result);
 
-  if (Begin)
-    Begin->setFragment(F);
-
   return Result;
 }
 
@@ -923,12 +920,6 @@ EmitDwarfUnwindType MCContext::emitDwarfUnwindInfo() const {
   if (!TargetOptions)
     return EmitDwarfUnwindType::Default;
   return TargetOptions->EmitDwarfUnwind;
-}
-
-bool MCContext::emitCompactUnwindNonCanonical() const {
-  if (TargetOptions)
-    return TargetOptions->EmitCompactUnwindNonCanonical;
-  return false;
 }
 
 void MCContext::setGenDwarfRootFile(StringRef InputFileName, StringRef Buffer) {

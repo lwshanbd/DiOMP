@@ -51,6 +51,11 @@ C/C++ Language Potentially Breaking Changes
 
     foo: asm goto ("# %0 %1"::"i"(&&foo)::foo);
 
+- ``__builtin_object_size`` and ``__builtin_dynamic_object_size`` now add the
+  ``sizeof`` the elements specified in designated initializers of flexible
+  array members for structs that contain them. This change is more consistent
+  with the behavior of GCC.
+
 C++ Specific Potentially Breaking Changes
 -----------------------------------------
 - Clang won't search for coroutine_traits in std::experimental namespace any more.
@@ -58,7 +63,8 @@ C++ Specific Potentially Breaking Changes
 
 ABI Changes in This Version
 ---------------------------
-
+- A bug in evaluating the ineligibility of some special member functions has been fixed. This can
+  make some classes trivially copyable that were not trivially copyable before. (`#62555 <https://github.com/llvm/llvm-project/issues/62555>`_)
 
 What's New in Clang |release|?
 ==============================
@@ -197,6 +203,9 @@ Non-comprehensive list of changes in this release
   ``memcmp(&lhs, &rhs, sizeof(T)) == 0``.
 - Clang now ignores null directives outside of the include guard when deciding
   whether a file can be enabled for the multiple-include optimization.
+- Clang now support ``__builtin_FUNCSIG()`` which retruns the same information
+  as the ``__FUNCSIG__`` macro (available only with ``-fms-extensions`` flag).
+  This fixes (`#58951 <https://github.com/llvm/llvm-project/issues/58951>`_).
 
 New Compiler Flags
 ------------------
@@ -388,6 +397,10 @@ Bug Fixes in This Version
 - Fix crash when attempting to perform parenthesized initialization of an
   aggregate with a base class with only non-public constructors.
   (`#62296 <https://github.com/llvm/llvm-project/issues/62296>`_)
+- Fix crash when handling initialization candidates for invalid deduction guide.
+  (`#62408 <https://github.com/llvm/llvm-project/issues/62408>`_)
+- Fix crash when redefining a variable with an invalid type again with an
+  invalid type. (`#62447 <https://github.com/llvm/llvm-project/issues/62447>`_)
 - Fix a stack overflow issue when evaluating ``consteval`` default arguments.
   (`#60082` <https://github.com/llvm/llvm-project/issues/60082>`_)
 - Fix the assertion hit when generating code for global variable initializer of
@@ -406,6 +419,20 @@ Bug Fixes in This Version
   when it had been instantiated from a partial template specialization with different
   template arguments on the containing class. This fixes:
   (`#60778 <https://github.com/llvm/llvm-project/issues/60778>`_).
+- Fix a crash when an enum constant has a dependent-type recovery expression for
+  C.
+  (`#62446 <https://github.com/llvm/llvm-project/issues/62446>`_).
+- Propagate the value-dependent bit for VAArgExpr. Fixes a crash where a
+  __builtin_va_arg call has invalid arguments.
+  (`#62711 <https://github.com/llvm/llvm-project/issues/62711>`_).
+- Fix crash on attempt to initialize union with flexible array member.
+  (`#61746 <https://github.com/llvm/llvm-project/issues/61746>`_).
+- Clang `TextNodeDumper` enabled through `-ast-dump` flag no longer evaluates the
+  initializer of constexpr `VarDecl` if the declaration has a dependent type.
+- Match GCC's behavior for ``__builtin_object_size`` and
+  ``__builtin_dynamic_object_size`` on structs containing flexible array
+  members.
+  (`#62789 <https://github.com/llvm/llvm-project/issues/62789>`_).
 
 Bug Fixes to Compiler Builtins
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -456,6 +483,8 @@ Bug Fixes to C++ Support
 - Some predefined expressions are now treated as string literals in MSVC
   compatibility mode.
   (`#114 <https://github.com/llvm/llvm-project/issues/114>`_)
+- Fix parsing of `auto(x)`, when it is surrounded by parentheses.
+  (`#62494 <https://github.com/llvm/llvm-project/issues/62494>`_)
 
 Bug Fixes to AST Handling
 ^^^^^^^^^^^^^^^^^^^^^^^^^

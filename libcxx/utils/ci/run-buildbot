@@ -229,6 +229,7 @@ check-generated-output)
     ! grep -rn '[^ -~]' libcxx/include libcxx/src libcxx/test libcxx/benchmarks \
            --exclude '*.dat' \
            --exclude 'escaped_output.*.pass.cpp' \
+           --exclude 'fill.unicode.pass.cpp' \
            --exclude 'format_tests.h' \
            --exclude 'format.functions.tests.h' \
            --exclude 'formatter.*.pass.cpp' \
@@ -275,9 +276,9 @@ generic-cxx20)
     check-runtimes
     check-abi-list
 ;;
-generic-cxx2b)
+generic-cxx23)
     clean
-    generate-cmake -C "${MONOREPO_ROOT}/libcxx/cmake/caches/Generic-cxx2b.cmake"
+    generate-cmake -C "${MONOREPO_ROOT}/libcxx/cmake/caches/Generic-cxx23.cmake"
     check-runtimes
     check-abi-list
 ;;

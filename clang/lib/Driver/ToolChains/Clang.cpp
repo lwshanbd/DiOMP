@@ -2511,9 +2511,6 @@ static void CollectArgsForIntegratedAssembler(Compilation &C,
 
   Args.AddLastArg(CmdArgs, options::OPT_femit_dwarf_unwind_EQ);
 
-  Args.addOptInFlag(CmdArgs, options::OPT_femit_compact_unwind_non_canonical,
-                    options::OPT_fno_emit_compact_unwind_non_canonical);
-
   // If you add more args here, also add them to the block below that
   // starts with "// If CollectArgsForIntegratedAssembler() isn't called below".
 
@@ -3768,12 +3765,6 @@ static bool RenderModulesOptions(Compilation &C, const Driver &D,
   }
 
   if (HaveModules) {
-    // -fprebuilt-module-path specifies where to load the prebuilt module files.
-    for (const Arg *A : Args.filtered(options::OPT_fprebuilt_module_path)) {
-      CmdArgs.push_back(Args.MakeArgString(
-          std::string("-fprebuilt-module-path=") + A->getValue()));
-      A->claim();
-    }
     if (Args.hasFlag(options::OPT_fprebuilt_implicit_modules,
                      options::OPT_fno_prebuilt_implicit_modules, false))
       CmdArgs.push_back("-fprebuilt-implicit-modules");
@@ -3806,9 +3797,16 @@ static bool RenderModulesOptions(Compilation &C, const Driver &D,
   // names to precompiled module files (the module is loaded only if used).
   // The -fmodule-file=<file> form can be used to unconditionally load
   // precompiled module files (whether used or not).
-  if (HaveModules)
+  if (HaveModules || Input.getType() == clang::driver::types::TY_ModuleFile) {
     Args.AddAllArgs(CmdArgs, options::OPT_fmodule_file);
-  else
+
+    // -fprebuilt-module-path specifies where to load the prebuilt module files.
+    for (const Arg *A : Args.filtered(options::OPT_fprebuilt_module_path)) {
+      CmdArgs.push_back(Args.MakeArgString(
+          std::string("-fprebuilt-module-path=") + A->getValue()));
+      A->claim();
+    }
+  } else
     Args.ClaimAllArgs(options::OPT_fmodule_file);
 
   // When building modules and generating crashdumps, we need to dump a module
@@ -7066,6 +7064,9 @@ void Clang::ConstructJob(Compilation &C, const JobAction &JA,
     A->claim();
   }
 
+  Args.addOptInFlag(CmdArgs, options::OPT_fsafe_buffer_usage_suggestions,
+                    options::OPT_fno_safe_buffer_usage_suggestions);
+
   // Setup statistics file output.
   SmallString<128> StatsFile = getStatsFileName(Args, Output, Input, D);
   if (!StatsFile.empty()) {
@@ -7876,7 +7877,7 @@ void Clang::AddClangCLArgs(const ArgList &Args, types::ID InputType,
   if (Args.hasArg(options::OPT__SLASH_kernel))
     CmdArgs.push_back("-fms-kernel");
 
-  if (Arg *A = Args.getLastArg(options::OPT__SLASH_guard)) {
+  for (const Arg *A : Args.filtered(options::OPT__SLASH_guard)) {
     StringRef GuardArgs = A->getValue();
     // The only valid options are "cf", "cf,nochecks", "cf-", "ehcont" and
     // "ehcont-".
@@ -7895,6 +7896,7 @@ void Clang::AddClangCLArgs(const ArgList &Args, types::ID InputType,
     } else {
       D.Diag(diag::err_drv_invalid_value) << A->getSpelling() << GuardArgs;
     }
+    A->claim();
   }
 }
 
