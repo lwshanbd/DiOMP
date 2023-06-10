@@ -386,12 +386,8 @@ inline void DoNotOptimize(Tp const& value) {
 #  define TEST_HAS_NO_THREADS
 #endif
 
-#if defined(_LIBCPP_HAS_NO_FILESYSTEM_LIBRARY)
-#  define TEST_HAS_NO_FILESYSTEM_LIBRARY
-#endif
-
-#if defined(_LIBCPP_HAS_NO_FSTREAM)
-#  define TEST_HAS_NO_FSTREAM
+#if defined(_LIBCPP_HAS_NO_FILESYSTEM)
+#  define TEST_HAS_NO_FILESYSTEM
 #endif
 
 #if defined(_LIBCPP_HAS_NO_FGETPOS_FSETPOS)
@@ -438,6 +434,15 @@ inline void DoNotOptimize(Tp const& value) {
 
 #ifdef _LIBCPP_SHORT_WCHAR
 #  define TEST_SHORT_WCHAR
+#endif
+
+// This is a temporary workaround for user-defined `operator new` definitions
+// not being picked up on Apple platforms in some circumstances. This is under
+// investigation and should be short-lived.
+#ifdef __APPLE__
+#  define TEST_WORKAROUND_BUG_109234844_WEAK __attribute__((weak))
+#else
+#  define TEST_WORKAROUND_BUG_109234844_WEAK /* nothing */
 #endif
 
 #endif // SUPPORT_TEST_MACROS_HPP

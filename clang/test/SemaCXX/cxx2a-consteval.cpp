@@ -250,13 +250,13 @@ auto l0 = [](int i) consteval {
   return f(i);
 };
 
-auto l1 = [](int i) constexpr {
-// expected-note@-1 {{declared here}}
+auto l1 = [](int i) constexpr { // expected-error{{cannot take address of immediate call operator}} \
+                                // expected-note {{declared here}}
   int t = f(i);
-// expected-error@-1 {{is not a constant expression}}
-// expected-note@-2 {{function parameter}}
-  return f(0);  
+  return f(0);
 };
+
+int(*test)(int)  = l1;
 
 }
 
@@ -761,7 +761,7 @@ struct S {
 };
 
 S s1; // expected-error {{call to consteval function 'NamespaceScopeConsteval::S::S' is not a constant expression}} \
-         expected-note {{subobject of type 'int' is not initialized}}
+         expected-note {{subobject 'Val' is not initialized}}
 
 template <typename Ty>
 struct T {
@@ -770,7 +770,7 @@ struct T {
 };
 
 T<int> t; // expected-error {{call to consteval function 'NamespaceScopeConsteval::T<int>::T' is not a constant expression}} \
-             expected-note {{subobject of type 'int' is not initialized}}
+             expected-note {{subobject 'Val' is not initialized}}
 
 } // namespace NamespaceScopeConsteval
 

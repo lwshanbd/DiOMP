@@ -295,7 +295,7 @@ body:             |
   ; CHECK-NEXT:   successors: %bb.1(0x80000000)
   ; CHECK-NEXT:   liveins: $vgpr0
   ; CHECK-NEXT: {{  $}}
-  ; CHECK-NEXT:   undef %2.sub1:vreg_64 = COPY $vgpr0
+  ; CHECK-NEXT:   dead undef %2.sub1:vreg_64 = COPY $vgpr0
   ; CHECK-NEXT: {{  $}}
   ; CHECK-NEXT: bb.1:
   ; CHECK-NEXT:   successors: %bb.2(0x40000000), %bb.1(0x40000000)
@@ -336,7 +336,7 @@ body:             |
   ; CHECK-NEXT:   successors: %bb.1(0x80000000)
   ; CHECK-NEXT:   liveins: $vgpr0
   ; CHECK-NEXT: {{  $}}
-  ; CHECK-NEXT:   undef %0.sub1:vreg_64 = COPY $vgpr0
+  ; CHECK-NEXT:   dead undef %0.sub1:vreg_64 = COPY $vgpr0
   ; CHECK-NEXT: {{  $}}
   ; CHECK-NEXT: bb.1:
   ; CHECK-NEXT:   successors: %bb.2(0x40000000), %bb.1(0x40000000)
@@ -376,7 +376,7 @@ body:             |
   ; CHECK-NEXT:   successors: %bb.1(0x80000000)
   ; CHECK-NEXT:   liveins: $vgpr0
   ; CHECK-NEXT: {{  $}}
-  ; CHECK-NEXT:   undef %0.sub1:vreg_64 = COPY $vgpr0
+  ; CHECK-NEXT:   dead undef %0.sub1:vreg_64 = COPY $vgpr0
   ; CHECK-NEXT: {{  $}}
   ; CHECK-NEXT: bb.1:
   ; CHECK-NEXT:   successors: %bb.2(0x40000000), %bb.1(0x40000000)

@@ -109,10 +109,24 @@ class MMAMatrixOf<list<Type> allowedTypes> :
   "::llvm::cast<::mlir::gpu::MMAMatrixType>($_self).getElementType()",
   "gpu.mma_matrix", "::mlir::gpu::MMAMatrixType">;
 
-// Generic type for all sparse handles (could be refined).
-def GPU_SparseHandle : DialectType<
-  GPU_Dialect, CPred<"$_self.isa<::mlir::gpu::SparseHandleType>()">, "sparse handle type">,
-             BuildableType<"mlir::gpu::SparseHandleType::get($_builder.getContext())">;
+// Types for all sparse handles.
+def GPU_SparseEnvHandle :
+  DialectType<GPU_Dialect,
+    CPred<"llvm::isa<::mlir::gpu::SparseEnvHandleType>($_self)">,
+    "sparse environment handle type">,
+  BuildableType<"mlir::gpu::SparseEnvHandleType::get($_builder.getContext())">;
+
+def GPU_SparseDnTensorHandle :
+  DialectType<GPU_Dialect,
+    CPred<"llvm::isa<::mlir::gpu::SparseDnTensorHandleType>($_self)">,
+    "dense tensor handle type">,
+  BuildableType<"mlir::gpu::SparseDnTensorHandleType::get($_builder.getContext())">;
+
+def GPU_SparseSpMatHandle :
+  DialectType<GPU_Dialect,
+    CPred<"llvm::isa<::mlir::gpu::SparseSpMatHandleType>($_self)">,
+    "sparse matrix handle type">,
+  BuildableType<"mlir::gpu::SparseSpMatHandleType::get($_builder.getContext())">;
 
 //===----------------------------------------------------------------------===//
 // GPU Interfaces.

@@ -15,6 +15,7 @@ import lldb
 from lldb.plugins.scripted_process import PassthroughScriptedProcess
 from lldb.plugins.scripted_process import PassthroughScriptedThread
 
+
 class MultiplexedScriptedProcess(PassthroughScriptedProcess):
     def __init__(self, exe_ctx: lldb.SBExecutionContext, args: lldb.SBStructuredData):
         super().__init__(exe_ctx, args)
@@ -67,6 +68,7 @@ class MultiplexedScriptedProcess(PassthroughScriptedProcess):
 
     def get_scripted_thread_plugin(self) -> str:
         return f"{MultiplexedScriptedThread.__module__}.{MultiplexedScriptedThread.__name__}"
+
 
 class MultiplexedScriptedThread(PassthroughScriptedThread):
     def get_name(self) -> str:
@@ -311,6 +313,7 @@ def duplicate_target(driving_target):
     triple = driving_target.triple
     debugger = driving_target.GetDebugger()
     return debugger.CreateTargetWithFileAndTargetTriple(exe, triple)
+
 
 def create_mux_process(debugger, command, exe_ctx, result, dict):
     if not debugger.GetNumTargets() > 0:

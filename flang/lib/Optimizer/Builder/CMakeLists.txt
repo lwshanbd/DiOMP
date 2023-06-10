@@ -1,4 +1,5 @@
 get_property(dialect_libs GLOBAL PROPERTY MLIR_DIALECT_LIBS)
+get_property(extension_libs GLOBAL PROPERTY MLIR_EXTENSION_LIBS)
 
 add_flang_library(FIRBuilder
   BoxValue.cpp
@@ -23,6 +24,7 @@ add_flang_library(FIRBuilder
   Runtime/Ragged.cpp
   Runtime/Reduction.cpp
   Runtime/Stop.cpp
+  Runtime/TemporaryStack.cpp
   Runtime/Transformational.cpp
   TemporaryStorage.cpp
 
@@ -30,6 +32,7 @@ add_flang_library(FIRBuilder
   FIRDialect
   HLFIRDialect
   ${dialect_libs}
+  ${extension_libs}
 
   LINK_LIBS
   FIRDialect
@@ -37,4 +40,5 @@ add_flang_library(FIRBuilder
   FIRSupport
   HLFIRDialect
   ${dialect_libs}
+  ${extension_libs}
 )

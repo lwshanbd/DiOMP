@@ -244,7 +244,7 @@ struct _LIBCPP_TEMPLATE_VIS char_traits<char>
     const char_type* find(const char_type* __s, size_t __n, const char_type& __a) _NOEXCEPT {
       if (__n == 0)
           return nullptr;
-      return std::__constexpr_char_memchr(__s, static_cast<int>(__a), __n);
+      return std::__constexpr_memchr(__s, __a, __n);
     }
 
     static inline _LIBCPP_HIDE_FROM_ABI _LIBCPP_CONSTEXPR_SINCE_CXX20
@@ -373,7 +373,7 @@ struct _LIBCPP_TEMPLATE_VIS char_traits<char8_t>
 
   static _LIBCPP_HIDE_FROM_ABI constexpr int
   compare(const char_type* __s1, const char_type* __s2, size_t __n) _NOEXCEPT {
-      return std::__constexpr_memcmp(__s1, __s2, __n);
+      return std::__constexpr_memcmp(__s1, __s2, __element_count(__n));
   }
 
     static _LIBCPP_HIDE_FROM_ABI constexpr

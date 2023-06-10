@@ -2,7 +2,7 @@
 
 ! RUN: bbc -fopenacc -emit-fir %s -o - | FileCheck %s
 
-! CHECK-LABEL: acc.private.recipe @privatization_10xf32 : !fir.ref<!fir.array<10xf32>> init {
+! CHECK-LABEL: acc.private.recipe @privatization_ref_10xf32 : !fir.ref<!fir.array<10xf32>> init {
 ! CHECK: ^bb0(%{{.*}}: !fir.ref<!fir.array<10xf32>>):
 ! CHECK:   acc.yield %{{.*}} : !fir.ref<!fir.array<10xf32>>
 ! CHECK: }
@@ -23,6 +23,8 @@ subroutine acc_serial_loop
   real, dimension(n) :: a, b, c
   real, dimension(n, n) :: d, e
   real, pointer :: f, g
+  integer :: reduction_i
+  real :: reduction_r
 
   integer :: gangNum = 8
   integer :: gangStatic = 8
@@ -370,8 +372,8 @@ subroutine acc_serial_loop
     a(i) = b(i)
   END DO
 
-! CHECK:      acc.serial firstprivate(%[[B]] : !fir.ref<!fir.array<10xf32>>) private(@privatization_10xf32 -> %[[A]] : !fir.ref<!fir.array<10xf32>>) {
-! CHECK:        acc.loop private(@privatization_10xf32 -> %[[A]] : !fir.ref<!fir.array<10xf32>>) {
+! CHECK:      acc.serial firstprivate(%[[B]] : !fir.ref<!fir.array<10xf32>>) private(@privatization_ref_10xf32 -> %[[A]] : !fir.ref<!fir.array<10xf32>>) {
+! CHECK:        acc.loop private(@privatization_ref_10xf32 -> %[[A]] : !fir.ref<!fir.array<10xf32>>) {
 ! CHECK:          fir.do_loop
 ! CHECK:          acc.yield
 ! CHECK-NEXT:   }{{$}}
@@ -641,6 +643,20 @@ subroutine acc_serial_loop
 
 ! CHECK:      acc.serial {
 ! CHECK:        acc.loop tile(%{{.*}}, %{{.*}} : i32, i32) {
+! CHECK:          fir.do_loop
+! CHECK:          acc.yield
+! CHECK-NEXT:   }{{$}}
+! CHECK:        acc.yield
+! CHECK-NEXT: }{{$}}
+
+  !$acc serial loop reduction(+:reduction_r) reduction(*:reduction_i)
+  do i = 1, n
+    reduction_r = reduction_r + a(i)
+    reduction_i = 1
+  end do
+
+! CHECK:      acc.serial reduction(@reduction_add_f32 -> %{{.*}} : !fir.ref<f32>, @reduction_mul_i32 -> %{{.*}} : !fir.ref<i32>) {
+! CHECK:        acc.loop reduction(@reduction_add_f32 -> %{{.*}} : !fir.ref<f32>, @reduction_mul_i32 -> %{{.*}} : !fir.ref<i32>) {
 ! CHECK:          fir.do_loop
 ! CHECK:          acc.yield
 ! CHECK-NEXT:   }{{$}}

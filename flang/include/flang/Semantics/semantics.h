@@ -215,7 +215,10 @@ public:
   void UseFortranBuiltinsModule();
   const Scope *GetBuiltinsScope() const { return builtinsScope_; }
 
+  void UsePPCFortranBuiltinTypesModule();
+  const Scope &GetCUDABuiltinsScope();
   void UsePPCFortranBuiltinsModule();
+  Scope *GetPPCBuiltinTypesScope() { return ppcBuiltinTypesScope_; }
   const Scope *GetPPCBuiltinsScope() const { return ppcBuiltinsScope_; }
 
   // Saves a module file's parse tree so that it remains available
@@ -252,7 +255,7 @@ private:
   void CheckError(const Symbol &);
 
   const common::IntrinsicTypeDefaultKinds &defaultKinds_;
-  const common::LanguageFeatureControl languageFeatures_;
+  const common::LanguageFeatureControl &languageFeatures_;
   parser::AllCookedSources &allCookedSources_;
   std::optional<parser::CharBlock> location_;
   std::vector<std::string> searchDirectories_;
@@ -278,6 +281,8 @@ private:
   UnorderedSymbolSet errorSymbols_;
   std::set<std::string> tempNames_;
   const Scope *builtinsScope_{nullptr}; // module __Fortran_builtins
+  Scope *ppcBuiltinTypesScope_{nullptr}; // module __Fortran_PPC_types
+  std::optional<const Scope *> cudaBuiltinsScope_; // module __CUDA_builtins
   const Scope *ppcBuiltinsScope_{nullptr}; // module __Fortran_PPC_intrinsics
   std::list<parser::Program> modFileParseTrees_;
   std::unique_ptr<CommonBlockMap> commonBlockMap_;

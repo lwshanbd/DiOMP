@@ -6,7 +6,6 @@
 //===----------------------------------------------------------------------===//
 
 // UNSUPPORTED: c++03, c++11, c++14, c++17, c++20
-// UNSUPPORTED: libcpp-has-no-incomplete-format
 
 // This test uses std::filesystem::path, which is not always available
 // XFAIL: availability-filesystem-missing
@@ -43,7 +42,7 @@
 #include "test_macros.h"
 #include "min_allocator.h"
 
-#ifndef TEST_HAS_NO_FILESYSTEM_LIBRARY
+#ifndef TEST_HAS_NO_FILESYSTEM
 #  include <filesystem>
 #endif
 #ifndef TEST_HAS_NO_LOCALIZATION
@@ -183,7 +182,7 @@ void test_P1636() {
   assert_is_not_formattable<std::bitset<42>, CharT>();
   assert_is_not_formattable<std::complex<double>, CharT>();
   assert_is_not_formattable<std::error_code, CharT>();
-#ifndef TEST_HAS_NO_FILESYSTEM_LIBRARY
+#ifndef TEST_HAS_NO_FILESYSTEM
   assert_is_not_formattable<std::filesystem::path, CharT>();
 #endif
   assert_is_not_formattable<std::shared_ptr<int>, CharT>();

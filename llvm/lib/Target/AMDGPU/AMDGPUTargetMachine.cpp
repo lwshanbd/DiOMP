@@ -275,11 +275,19 @@ static cl::opt<bool> OptVGPRLiveRange(
     cl::init(true), cl::Hidden);
 
 // Enable atomic optimization
-static cl::opt<bool> EnableAtomicOptimizations(
-  "amdgpu-atomic-optimizations",
-  cl::desc("Enable atomic optimizations"),
-  cl::init(false),
-  cl::Hidden);
+static cl::opt<bool>
+    EnableAtomicOptimizations("amdgpu-atomic-optimizations",
+                              cl::desc("Enable atomic optimizations"),
+                              cl::init(false), cl::Hidden);
+
+static cl::opt<ScanOptions> AMDGPUAtomicOptimizerStrategy(
+    "amdgpu-atomic-optimizer-strategy",
+    cl::desc("Select DPP or Iterative strategy for scan"),
+    cl::init(ScanOptions::DPP),
+    cl::values(clEnumValN(ScanOptions::DPP, "DPP",
+                          "Use DPP operations for scan"),
+               clEnumValN(ScanOptions::Iterative, "Iterative",
+                          "Use Iterative approach for scan")));
 
 // Enable Mode register optimization
 static cl::opt<bool> EnableSIModeRegisterPass(
@@ -341,6 +349,11 @@ static cl::opt<bool> EnableMaxIlpSchedStrategy(
     cl::desc("Enable scheduling strategy to maximize ILP for a single wave."),
     cl::Hidden, cl::init(false));
 
+static cl::opt<bool> EnableRewritePartialRegUses(
+    "amdgpu-enable-rewrite-partial-reg-uses",
+    cl::desc("Enable rewrite partial reg uses pass"), cl::init(false),
+    cl::Hidden);
+
 extern "C" LLVM_EXTERNAL_VISIBILITY void LLVMInitializeAMDGPUTarget() {
   // Register the target
   RegisterTargetMachine<R600TargetMachine> X(getTheAMDGPUTarget());
@@ -375,7 +388,6 @@ extern "C" LLVM_EXTERNAL_VISIBILITY void LLVMInitializeAMDGPUTarget() {
   initializeAMDGPULowerKernelArgumentsPass(*PR);
   initializeAMDGPUPromoteKernelArgumentsPass(*PR);
   initializeAMDGPULowerKernelAttributesPass(*PR);
-  initializeAMDGPULowerIntrinsicsPass(*PR);
   initializeAMDGPUOpenCLEnqueuedBlockLoweringPass(*PR);
   initializeAMDGPUPostLegalizerCombinerPass(*PR);
   initializeAMDGPUPreLegalizerCombinerPass(*PR);
@@ -417,6 +429,7 @@ extern "C" LLVM_EXTERNAL_VISIBILITY void LLVMInitializeAMDGPUTarget() {
   initializeAMDGPUResourceUsageAnalysisPass(*PR);
   initializeGCNNSAReassignPass(*PR);
   initializeGCNPreRAOptimizationsPass(*PR);
+  initializeGCNRewritePartialRegUsesPass(*PR);
 }
 
 static std::unique_ptr<TargetLoweringObjectFile> createTLOF(const Triple &TT) {
@@ -660,7 +673,12 @@ void AMDGPUTargetMachine::registerPassBuilderCallbacks(PassBuilder &PB) {
           return true;
         }
         if (PassName == "amdgpu-atomic-optimizer") {
-          PM.addPass(AMDGPUAtomicOptimizerPass(*this));
+          PM.addPass(
+              AMDGPUAtomicOptimizerPass(*this, AMDGPUAtomicOptimizerStrategy));
+          return true;
+        }
+        if (PassName == "amdgpu-codegenprepare") {
+          PM.addPass(AMDGPUCodeGenPreparePass(*this));
           return true;
         }
         return false;
@@ -979,8 +997,6 @@ void AMDGPUPassConfig::addIRPasses() {
   // A call to propagate attributes pass in the backend in case opt was not run.
   addPass(createAMDGPUPropagateAttributesEarlyPass(&TM));
 
-  addPass(createAMDGPULowerIntrinsicsPass());
-
   // Function calls are not supported, so make sure we inline everything.
   addPass(createAMDGPUAlwaysInlinePass());
   addPass(createAlwaysInlinerLegacyPass());
@@ -1048,7 +1064,8 @@ void AMDGPUPassConfig::addCodeGenPrepare() {
     if (RemoveIncompatibleFunctions)
       addPass(createAMDGPURemoveIncompatibleFunctionsPass(TM));
 
-    addPass(createAMDGPUAttributorPass());
+    if (TM->getOptLevel() > CodeGenOpt::None)
+      addPass(createAMDGPUAttributorPass());
 
     // FIXME: This pass adds 2 hacky attributes that can be replaced with an
     // analysis, and should be removed.
@@ -1127,7 +1144,7 @@ bool GCNPassConfig::addPreISel() {
     addPass(createAMDGPULateCodeGenPreparePass());
 
   if (isPassEnabled(EnableAtomicOptimizations, CodeGenOpt::Less)) {
-    addPass(createAMDGPUAtomicOptimizerPass());
+    addPass(createAMDGPUAtomicOptimizerPass(AMDGPUAtomicOptimizerStrategy));
   }
 
   if (TM->getOptLevel() > CodeGenOpt::None)
@@ -1263,6 +1280,9 @@ void GCNPassConfig::addOptimizedRegAlloc() {
 
   if (OptExecMaskPreRA)
     insertPass(&MachineSchedulerID, &SIOptimizeExecMaskingPreRAID);
+
+  if (EnableRewritePartialRegUses)
+    insertPass(&RenameIndependentSubregsID, &GCNRewritePartialRegUsesID);
 
   if (isPassEnabled(EnablePreRAOptimizations))
     insertPass(&RenameIndependentSubregsID, &GCNPreRAOptimizationsID);

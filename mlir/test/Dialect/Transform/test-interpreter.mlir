@@ -83,33 +83,6 @@ transform.sequence failures(propagate) {
 
 // -----
 
-transform.with_pdl_patterns {
-^bb0(%arg0: !transform.any_op):
-  sequence %arg0 : !transform.any_op failures(propagate) {
-  ^bb0(%arg1: !transform.any_op):
-    %0 = pdl_match @some in %arg1 : (!transform.any_op) -> !transform.any_op
-    test_print_remark_at_operand %0, "matched" : !transform.any_op
-  }
-
-  pdl.pattern @some : benefit(1) {
-    %0 = pdl.operation "test.some_op"
-    pdl.rewrite %0 with "transform.dialect"
-  }
-
-  pdl.pattern @other : benefit(1) {
-    %0 = pdl.operation "test.other_op"
-    pdl.rewrite %0 with "transform.dialect"
-  }
-}
-
-// expected-remark @below {{matched}}
-"test.some_op"() : () -> ()
-"test.other_op"() : () -> ()
-// expected-remark @below {{matched}}
-"test.some_op"() : () -> ()
-
-// -----
-
 // expected-remark @below {{parent function}}
 func.func @foo() {
   %0 = arith.constant 0 : i32
@@ -550,6 +523,32 @@ transform.with_pdl_patterns {
     %1 = pdl_match @subi in %arg1 : (!transform.any_op) -> !transform.any_op
     %2 = merge_handles %0, %1 : !transform.any_op
     test_print_remark_at_operand %2, "matched" : !transform.any_op
+  }
+}
+
+// -----
+
+func.func @foo(%arg0: index) {
+  %0 = arith.addi %arg0, %arg0 : index
+  return
+}
+
+transform.with_pdl_patterns {
+^bb0(%arg0: !transform.any_op):
+  pdl.pattern @addi : benefit(1) {
+    %0 = pdl.operands
+    %1 = pdl.types
+    %2 = pdl.operation "arith.addi"(%0 : !pdl.range<value>) -> (%1 : !pdl.range<type>)
+    pdl.rewrite %2 with "transform.dialect"
+  }
+
+  transform.sequence %arg0 : !transform.any_op failures(propagate) {
+  ^bb0(%arg1: !transform.any_op):
+    %0 = pdl_match @addi in %arg1 : (!transform.any_op) -> !transform.any_op
+    %1 = pdl_match @addi in %arg1 : (!transform.any_op) -> !transform.any_op
+    %2 = merge_handles deduplicate %0, %1 : !transform.any_op
+    // expected-remark @below {{1}}
+    test_print_number_of_associated_payload_ir_ops %2 : !transform.any_op
   }
 }
 
@@ -1602,22 +1601,57 @@ module attributes { transform.with_named_sequence } {
 // -----
 
 // CHECK-LABEL: func @test_tracked_rewrite() {
-//  CHECK-NEXT:   "test.update_mapping"() {original_op = "test.replace_me"}
-//  CHECK-NEXT:   "test.drop_mapping"() {original_op = "test.replace_me"}
-//  CHECK-NEXT:   "test.update_mapping"() {original_op = "test.replace_me"}
+//  CHECK-NEXT:   transform.test_dummy_payload_op  {new_op} : () -> i1
+//  CHECK-NEXT:   transform.test_dummy_payload_op  {new_op} : () -> i1
+//  CHECK-NEXT:   return
 //  CHECK-NEXT: }
 func.func @test_tracked_rewrite() {
-  %0 = "test.replace_me"() {replacement = "test.update_mapping"} : () -> (i1)
-  %1 = "test.replace_me"() {replacement = "test.drop_mapping"} : () -> (i1)
-  %2 = "test.replace_me"() {replacement = "test.update_mapping"} : () -> (i1)
+  %0 = transform.test_dummy_payload_op {replace_me} : () -> (i1)
+  %1 = transform.test_dummy_payload_op {erase_me} : () -> (i1)
+  %2 = transform.test_dummy_payload_op {replace_me} : () -> (i1)
+  func.return
 }
 
 transform.sequence failures(propagate) {
 ^bb1(%arg1: !transform.any_op):
-  %0 = transform.structured.match ops{["test.replace_me"]} in %arg1 : (!transform.any_op) -> !transform.any_op
+  %0 = transform.structured.match ops{["transform.test_dummy_payload_op"]} in %arg1 : (!transform.any_op) -> !transform.any_op
   // expected-remark @below {{2 iterations}}
   transform.test_tracked_rewrite %0 : (!transform.any_op) -> ()
   // One replacement op (test.drop_mapping) is dropped from the mapping.
   // expected-remark @below {{2}}
   test_print_number_of_associated_payload_ir_ops %0 : !transform.any_op
+}
+
+
+// -----
+
+// CHECK-LABEL: func @test_annotation()
+//  CHECK-NEXT:   "test.annotate_me"()
+//  CHECK-SAME:                        broadcast_attr = 2 : i64
+//  CHECK-SAME:                        new_attr = 1 : i32
+//  CHECK-SAME:                        unit_attr
+//  CHECK-NEXT:   "test.annotate_me"()
+//  CHECK-SAME:                        broadcast_attr = 2 : i64
+//  CHECK-SAME:                        existing_attr = "test"
+//  CHECK-SAME:                        new_attr = 1 : i32
+//  CHECK-SAME:                        unit_attr
+//  CHECK-NEXT:   "test.annotate_me"()
+//  CHECK-SAME:                        broadcast_attr = 2 : i64
+//  CHECK-SAME:                        new_attr = 1 : i32
+//  CHECK-SAME:                        unit_attr
+func.func @test_annotation() {
+  %0 = "test.annotate_me"() : () -> (i1)
+  %1 = "test.annotate_me"() {existing_attr = "test"} : () -> (i1)
+  %2 = "test.annotate_me"() {new_attr = 0} : () -> (i1)
+}
+
+transform.sequence failures(propagate) {
+^bb1(%arg0: !transform.any_op):
+  %0 = transform.structured.match ops{["test.annotate_me"]} in %arg0 : (!transform.any_op) -> !transform.any_op
+  %1 = transform.test_produce_param_with_number_of_test_ops %0 : !transform.any_op
+  transform.annotate %0 "new_attr" = %1 : !transform.any_op, !transform.test_dialect_param
+
+  %2 = transform.param.constant 2 -> !transform.param<i64>
+  transform.annotate %0 "broadcast_attr" = %2 : !transform.any_op, !transform.param<i64>
+  transform.annotate %0 "unit_attr" : !transform.any_op
 }

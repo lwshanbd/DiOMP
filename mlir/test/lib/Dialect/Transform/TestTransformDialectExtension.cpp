@@ -17,7 +17,9 @@
 #include "mlir/Dialect/Transform/IR/TransformDialect.h"
 #include "mlir/Dialect/Transform/IR/TransformInterfaces.h"
 #include "mlir/Dialect/Transform/IR/TransformOps.h"
+#include "mlir/Dialect/Transform/PDLExtension/PDLExtensionOps.h"
 #include "mlir/IR/OpImplementation.h"
+#include "mlir/IR/PatternMatch.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/TypeSwitch.h"
 #include "llvm/Support/Compiler.h"
@@ -174,6 +176,10 @@ void mlir::test::TestProduceValueHandleToArgumentOfParentBlock::getEffects(
   transform::onlyReadsHandle(getIn(), effects);
   transform::producesHandle(getOut(), effects);
   transform::onlyReadsPayload(effects);
+}
+
+bool mlir::test::TestConsumeOperand::allowsRepeatedHandleOperands() {
+  return getAllowRepeatedHandles();
 }
 
 DiagnosedSilenceableFailure
@@ -625,6 +631,12 @@ DiagnosedSilenceableFailure mlir::test::TestProduceNullPayloadOp::apply(
   return DiagnosedSilenceableFailure::success();
 }
 
+DiagnosedSilenceableFailure mlir::test::TestProduceEmptyPayloadOp::apply(
+    transform::TransformResults &results, transform::TransformState &state) {
+  results.set(cast<OpResult>(getOut()), {});
+  return DiagnosedSilenceableFailure::success();
+}
+
 void mlir::test::TestProduceNullParamOp::getEffects(
     SmallVectorImpl<MemoryEffects::EffectInstance> &effects) {
   transform::producesHandle(getOut(), effects);
@@ -675,33 +687,16 @@ void mlir::test::TestTrackedRewriteOp::getEffects(
   transform::modifiesPayload(effects);
 }
 
-namespace {
-/// A TrackingListener for test cases. When the replacement op is
-/// "test.update_mapping", it is considered as a replacement op in the transform
-/// state mapping. Otherwise, it is not and the original op is simply removed
-/// from the mapping.
-class TestTrackingListener : public transform::TrackingListener {
-  using transform::TrackingListener::TrackingListener;
-
-protected:
-  Operation *findReplacementOp(Operation *op,
-                               ValueRange newValues) const override {
-    if (newValues.size() != 1)
-      return nullptr;
-    Operation *replacement = newValues[0].getDefiningOp();
-    if (!replacement)
-      return nullptr;
-    if (replacement->getName().getStringRef() != "test.update_mapping")
-      return nullptr;
-    return replacement;
-  }
-};
-} // namespace
+void mlir::test::TestDummyPayloadOp::getEffects(
+    SmallVectorImpl<MemoryEffects::EffectInstance> &effects) {
+  for (OpResult result : getResults())
+    transform::producesHandle(result, effects);
+}
 
 DiagnosedSilenceableFailure
 mlir::test::TestTrackedRewriteOp::apply(transform::TransformResults &results,
                                         transform::TransformState &state) {
-  TestTrackingListener listener(state, *this);
+  transform::ErrorCheckingTrackingListener listener(state, *this);
   IRRewriter rewriter(getContext(), &listener);
   int64_t numIterations = 0;
 
@@ -709,19 +704,23 @@ mlir::test::TestTrackedRewriteOp::apply(transform::TransformResults &results,
   // loop body. Replacement ops are not enumerated.
   for (Operation *op : state.getPayloadOps(getIn())) {
     ++numIterations;
-    rewriter.setInsertionPointToEnd(op->getBlock());
+    (void)op;
 
     // Erase all payload ops. The outer loop should have only one iteration.
     for (Operation *op : state.getPayloadOps(getIn())) {
-      if (op->getName().getStringRef() != "test.replace_me")
+      rewriter.setInsertionPoint(op);
+      if (op->hasAttr("erase_me")) {
+        rewriter.eraseOp(op);
         continue;
-      auto replacementName = op->getAttrOfType<StringAttr>("replacement");
-      if (!replacementName)
+      }
+      if (!op->hasAttr("replace_me")) {
         continue;
+      }
+
       SmallVector<NamedAttribute> attributes;
-      attributes.emplace_back(rewriter.getStringAttr("original_op"),
-                              op->getName().getIdentifier());
-      OperationState opState(op->getLoc(), replacementName,
+      attributes.emplace_back(rewriter.getStringAttr("new_op"),
+                              rewriter.getUnitAttr());
+      OperationState opState(op->getLoc(), op->getName().getIdentifier(),
                              /*operands=*/ValueRange(),
                              /*types=*/op->getResultTypes(), attributes);
       Operation *newOp = rewriter.create(opState);
@@ -731,6 +730,44 @@ mlir::test::TestTrackedRewriteOp::apply(transform::TransformResults &results,
 
   emitRemark() << numIterations << " iterations";
   return DiagnosedSilenceableFailure::success();
+}
+
+namespace {
+// Test pattern to replace an operation with a new op.
+class ReplaceWithNewOp : public RewritePattern {
+public:
+  ReplaceWithNewOp(MLIRContext *context)
+      : RewritePattern(MatchAnyOpTypeTag(), /*benefit=*/1, context) {}
+
+  LogicalResult matchAndRewrite(Operation *op,
+                                PatternRewriter &rewriter) const override {
+    auto newName = op->getAttrOfType<StringAttr>("replace_with_new_op");
+    if (!newName)
+      return failure();
+    Operation *newOp = rewriter.create(
+        op->getLoc(), OperationName(newName, op->getContext()).getIdentifier(),
+        op->getOperands(), op->getResultTypes());
+    rewriter.replaceOp(op, newOp->getResults());
+    return success();
+  }
+};
+
+// Test pattern to erase an operation.
+class EraseOp : public RewritePattern {
+public:
+  EraseOp(MLIRContext *context)
+      : RewritePattern("test.erase_op", /*benefit=*/1, context) {}
+  LogicalResult matchAndRewrite(Operation *op,
+                                PatternRewriter &rewriter) const override {
+    rewriter.eraseOp(op);
+    return success();
+  }
+};
+} // namespace
+
+void mlir::test::ApplyTestPatternsOp::populatePatterns(
+    RewritePatternSet &patterns) {
+  patterns.insert<ReplaceWithNewOp, EraseOp>(patterns.getContext());
 }
 
 namespace {
@@ -754,6 +791,23 @@ public:
 #define GET_TYPEDEF_LIST
 #include "TestTransformDialectExtensionTypes.cpp.inc"
         >();
+
+    auto verboseConstraint = [](PatternRewriter &rewriter,
+                                ArrayRef<PDLValue> pdlValues) {
+      for (const PDLValue &pdlValue : pdlValues) {
+        if (Operation *op = pdlValue.dyn_cast<Operation *>()) {
+          op->emitWarning() << "from PDL constraint";
+        }
+      }
+      return success();
+    };
+
+    addDialectDataInitializer<transform::PDLMatchHooks>(
+        [&](transform::PDLMatchHooks &hooks) {
+          llvm::StringMap<PDLConstraintFunction> constraints;
+          constraints.try_emplace("verbose_constraint", verboseConstraint);
+          hooks.mergeInPDLMatchHooks(std::move(constraints));
+        });
   }
 };
 } // namespace
