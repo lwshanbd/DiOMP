@@ -64,7 +64,7 @@ namespace lld::coff {
 
 bool link(ArrayRef<const char *> args, llvm::raw_ostream &stdoutOS,
           llvm::raw_ostream &stderrOS, bool exitEarly, bool disableOutput) {
-  // This driver-specific context will be freed later by lldMain().
+  // This driver-specific context will be freed later by unsafeLldMain().
   auto *ctx = new COFFLinkerContext;
 
   ctx->e.initialize(stdoutOS, stderrOS, exitEarly, disableOutput);
@@ -390,7 +390,7 @@ void LinkerDriver::parseDirectives(InputFile *file) {
       if (!exp.extName.empty() && !isDecorated(exp.extName))
         exp.extName = saver().save("_" + exp.extName);
     }
-    exp.directives = true;
+    exp.source = ExportSource::Directives;
     ctx.config.exports.push_back(exp);
   }
 
@@ -483,8 +483,7 @@ StringRef LinkerDriver::findFile(StringRef filename) {
     return filename;
   };
 
-  bool hasPathSep = (filename.find_first_of("/\\") != StringRef::npos);
-  if (hasPathSep)
+  if (sys::path::is_absolute(filename))
     return getFilename(filename);
   bool hasExt = filename.contains('.');
   for (StringRef dir : searchPaths) {
@@ -636,6 +635,31 @@ void LinkerDriver::detectWinSysRoot(const opt::InputArgList &Args) {
         path::append(windowsSdkLibPath, windowsSDKLibVersion, "um");
     }
   }
+}
+
+void LinkerDriver::addClangLibSearchPaths(const std::string &argv0) {
+  std::string lldBinary = sys::fs::getMainExecutable(argv0.c_str(), nullptr);
+  SmallString<128> binDir(lldBinary);
+  sys::path::remove_filename(binDir); // remove lld-link.exe
+  StringRef rootDir = sys::path::parent_path(binDir); // remove 'bin'
+
+  SmallString<128> libDir(rootDir);
+  sys::path::append(libDir, "lib");
+  // We need to prepend the paths here in order to make sure that we always
+  // try to link the clang versions of the builtins over the ones supplied by MSVC.
+  searchPaths.insert(searchPaths.begin(), saver().save(libDir.str()));
+
+  // Add the resource dir library path
+  SmallString<128> runtimeLibDir(rootDir);
+  sys::path::append(runtimeLibDir, "lib", "clang", std::to_string(LLVM_VERSION_MAJOR), "lib");
+  searchPaths.insert(searchPaths.begin(), saver().save(runtimeLibDir.str()));
+
+  // Resource dir + osname, which is hardcoded to windows since we are in the
+  // COFF driver.
+  SmallString<128> runtimeLibDirWithOS(runtimeLibDir);
+  sys::path::append(runtimeLibDirWithOS, "windows");
+  searchPaths.insert(searchPaths.begin(), saver().save(runtimeLibDirWithOS.str()));
+
 }
 
 void LinkerDriver::addWinSysRootLibSearchPaths() {
@@ -1063,6 +1087,7 @@ void LinkerDriver::parseModuleDefs(StringRef path) {
     e2.data = e1.Data;
     e2.isPrivate = e1.Private;
     e2.constant = e1.Constant;
+    e2.source = ExportSource::ModuleDefinition;
     ctx.config.exports.push_back(e2);
   }
 }
@@ -1499,6 +1524,7 @@ void LinkerDriver::linkerMain(ArrayRef<const char *> argsArr) {
     config->showTiming = true;
 
   config->showSummary = args.hasArg(OPT_summary);
+  config->printSearchPaths = args.hasArg(OPT_print_search_paths);
 
   // Handle --version, which is an lld extension. This option is a bit odd
   // because it doesn't start with "/", but we deliberately chose "--" to
@@ -1542,6 +1568,7 @@ void LinkerDriver::linkerMain(ArrayRef<const char *> argsArr) {
   detectWinSysRoot(args);
   if (!args.hasArg(OPT_lldignoreenv) && !args.hasArg(OPT_winsysroot))
     addLibSearchPaths();
+  addClangLibSearchPaths(argsArr[0]);
 
   // Handle /ignore
   for (auto *arg : args.filtered(OPT_ignore)) {
@@ -1909,6 +1936,9 @@ void LinkerDriver::linkerMain(ArrayRef<const char *> argsArr) {
     fatal("/manifestinput: requires /manifest:embed");
   }
 
+  // Handle /dwodir
+  config->dwoDir = args.getLastArgValue(OPT_dwodir);
+
   config->thinLTOEmitImportsFiles = args.hasArg(OPT_thinlto_emit_imports_files);
   config->thinLTOIndexOnly = args.hasArg(OPT_thinlto_index_only) ||
                              args.hasArg(OPT_thinlto_index_only_arg);
@@ -2047,6 +2077,17 @@ void LinkerDriver::linkerMain(ArrayRef<const char *> argsArr) {
     addWinSysRootLibSearchPaths();
   }
   config->wordsize = config->is64() ? 8 : 4;
+
+  if (config->printSearchPaths) {
+    SmallString<256> buffer;
+    raw_svector_ostream stream(buffer);
+    stream << "Library search paths:\n";
+
+    for (StringRef path : searchPaths)
+      stream << "  " << path << "\n";
+
+    message(buffer);
+  }
 
   // Process files specified as /defaultlib. These must be processed after
   // addWinSysRootLibSearchPaths(), which is why they are in a separate loop.
@@ -2259,7 +2300,7 @@ void LinkerDriver::linkerMain(ArrayRef<const char *> argsArr) {
       if (!e.forwardTo.empty())
         continue;
       e.sym = addUndefined(e.name);
-      if (!e.directives)
+      if (e.source != ExportSource::Directives)
         e.symbolName = mangleMaybe(e.sym);
     }
 

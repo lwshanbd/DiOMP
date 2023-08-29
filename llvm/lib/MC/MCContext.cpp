@@ -310,8 +310,12 @@ MCSymbol *MCContext::createNamedTempSymbol(const Twine &Name) {
 }
 
 MCSymbol *MCContext::createLinkerPrivateTempSymbol() {
+  return createLinkerPrivateSymbol("tmp");
+}
+
+MCSymbol *MCContext::createLinkerPrivateSymbol(const Twine &Name) {
   SmallString<128> NameSV;
-  raw_svector_ostream(NameSV) << MAI->getLinkerPrivateGlobalPrefix() << "tmp";
+  raw_svector_ostream(NameSV) << MAI->getLinkerPrivateGlobalPrefix() << Name;
   return createSymbol(NameSV, true, false);
 }
 
@@ -588,7 +592,7 @@ MCSectionELF *MCContext::getELFSection(const Twine &Section, unsigned Type,
                .StartsWith(".gnu.linkonce.td.", SectionKind::getThreadData())
                .StartsWith(".llvm.linkonce.td.", SectionKind::getThreadData())
                .StartsWith(".debug_", SectionKind::getMetadata())
-               .Default(SectionKind::getText());
+               .Default(SectionKind::getReadOnly());
 
   MCSectionELF *Result =
       createELFSectionImpl(CachedName, Type, Flags, Kind, EntrySize, GroupSym,

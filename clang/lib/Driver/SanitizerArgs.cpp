@@ -928,14 +928,9 @@ SanitizerArgs::SanitizerArgs(const ToolChain &TC,
                      options::OPT_fno_sanitize_address_outline_instrumentation,
                      AsanOutlineInstrumentation);
 
-    // As a workaround for a bug in gold 2.26 and earlier, dead stripping of
-    // globals in ASan is disabled by default on most ELF targets.
-    // See https://sourceware.org/bugzilla/show_bug.cgi?id=19002
     AsanGlobalsDeadStripping = Args.hasFlag(
         options::OPT_fsanitize_address_globals_dead_stripping,
-        options::OPT_fno_sanitize_address_globals_dead_stripping,
-        !TC.getTriple().isOSBinFormatELF() || TC.getTriple().isOSFuchsia() ||
-            TC.getTriple().isPS());
+        options::OPT_fno_sanitize_address_globals_dead_stripping, true);
 
     // Enable ODR indicators which allow better handling of mixed instrumented
     // and uninstrumented globals. Disable them for Windows where weak odr
@@ -1292,6 +1287,8 @@ void SanitizerArgs::addArgs(const ToolChain &TC, const llvm::opt::ArgList &Args,
     CmdArgs.push_back("-asan-instrumentation-with-call-threshold=0");
     CmdArgs.push_back("-mllvm");
     CmdArgs.push_back("-asan-max-inline-poisoning-size=0");
+    CmdArgs.push_back("-mllvm");
+    CmdArgs.push_back("-asan-guard-against-version-mismatch=0");
   }
 
   // Only pass the option to the frontend if the user requested,

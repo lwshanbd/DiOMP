@@ -1645,14 +1645,15 @@ public:
   ///
   /// By default, performs semantic analysis to build the new statement.
   /// Subclasses may override this routine to provide different behavior.
-  StmtResult RebuildOMPExecutableDirective(OpenMPDirectiveKind Kind,
-                                           DeclarationNameInfo DirName,
-                                           OpenMPDirectiveKind CancelRegion,
-                                           ArrayRef<OMPClause *> Clauses,
-                                           Stmt *AStmt, SourceLocation StartLoc,
-                                           SourceLocation EndLoc) {
+  StmtResult RebuildOMPExecutableDirective(
+      OpenMPDirectiveKind Kind, DeclarationNameInfo DirName,
+      OpenMPDirectiveKind CancelRegion, ArrayRef<OMPClause *> Clauses,
+      Stmt *AStmt, SourceLocation StartLoc, SourceLocation EndLoc,
+      OpenMPDirectiveKind PrevMappedDirective = OMPD_unknown) {
+
     return getSema().ActOnOpenMPExecutableDirective(
-        Kind, DirName, CancelRegion, Clauses, AStmt, StartLoc, EndLoc);
+        Kind, DirName, CancelRegion, Clauses, AStmt, StartLoc, EndLoc,
+        PrevMappedDirective);
   }
 
   /// Build a new OpenMP 'if' clause.
@@ -2377,6 +2378,18 @@ public:
                                                     EndLoc);
   }
 
+  /// Build a new OpenMP 'ompx_attribute' clause.
+  ///
+  /// By default, performs semantic analysis to build the new OpenMP clause.
+  /// Subclasses may override this routine to provide different behavior.
+  OMPClause *RebuildOMPXAttributeClause(ArrayRef<const Attr *> Attrs,
+                                        SourceLocation StartLoc,
+                                        SourceLocation LParenLoc,
+                                        SourceLocation EndLoc) {
+    return getSema().ActOnOpenMPXAttributeClause(Attrs, StartLoc, LParenLoc,
+                                                 EndLoc);
+  }
+
   /// Build a new OpenMP 'align' clause.
   ///
   /// By default, performs semantic analysis to build the new OpenMP clause.
@@ -2420,6 +2433,19 @@ public:
                                      SourceLocation LParenLoc,
                                      SourceLocation EndLoc) {
     return getSema().ActOnOpenMPMessageClause(MS, StartLoc, LParenLoc, EndLoc);
+  }
+
+  /// Build a new OpenMP 'doacross' clause.
+  ///
+  /// By default, performs semantic analysis to build the new OpenMP clause.
+  /// Subclasses may override this routine to provide different behavior.
+  OMPClause *
+  RebuildOMPDoacrossClause(OpenMPDoacrossClauseModifier DepType,
+                           SourceLocation DepLoc, SourceLocation ColonLoc,
+                           ArrayRef<Expr *> VarList, SourceLocation StartLoc,
+                           SourceLocation LParenLoc, SourceLocation EndLoc) {
+    return getSema().ActOnOpenMPDoacrossClause(
+        DepType, DepLoc, ColonLoc, VarList, StartLoc, LParenLoc, EndLoc);
   }
 
   /// Rebuild the operand to an Objective-C \@synchronized statement.
@@ -7465,6 +7491,10 @@ StmtResult
 TreeTransform<Derived>::TransformCompoundStmt(CompoundStmt *S,
                                               bool IsStmtExpr) {
   Sema::CompoundScopeRAII CompoundScope(getSema());
+  Sema::FPFeaturesStateRAII FPSave(getSema());
+  if (S->hasStoredFPFeatures())
+    getSema().resetFPOptions(
+        S->getStoredFPFeatures().applyOverrides(getSema().getLangOpts()));
 
   const Stmt *ExprResult = S->getStmtExprResult();
   bool SubStmtInvalid = false;
@@ -8794,7 +8824,8 @@ StmtResult TreeTransform<Derived>::TransformOMPExecutableDirective(
 
   return getDerived().RebuildOMPExecutableDirective(
       D->getDirectiveKind(), DirName, CancelRegion, TClauses,
-      AssociatedStmt.get(), D->getBeginLoc(), D->getEndLoc());
+      AssociatedStmt.get(), D->getBeginLoc(), D->getEndLoc(),
+      D->getMappedDirective());
 }
 
 template <typename Derived>
@@ -8888,6 +8919,17 @@ StmtResult
 TreeTransform<Derived>::TransformOMPSectionDirective(OMPSectionDirective *D) {
   DeclarationNameInfo DirName;
   getDerived().getSema().StartOpenMPDSABlock(OMPD_section, DirName, nullptr,
+                                             D->getBeginLoc());
+  StmtResult Res = getDerived().TransformOMPExecutableDirective(D);
+  getDerived().getSema().EndOpenMPDSABlock(Res.get());
+  return Res;
+}
+
+template <typename Derived>
+StmtResult
+TreeTransform<Derived>::TransformOMPScopeDirective(OMPScopeDirective *D) {
+  DeclarationNameInfo DirName;
+  getDerived().getSema().StartOpenMPDSABlock(OMPD_scope, DirName, nullptr,
                                              D->getBeginLoc());
   StmtResult Res = getDerived().TransformOMPExecutableDirective(D);
   getDerived().getSema().EndOpenMPDSABlock(Res.get());
@@ -10727,6 +10769,32 @@ OMPClause *TreeTransform<Derived>::TransformOMPXDynCGroupMemClause(
       Size.get(), C->getBeginLoc(), C->getLParenLoc(), C->getEndLoc());
 }
 
+template <typename Derived>
+OMPClause *
+TreeTransform<Derived>::TransformOMPDoacrossClause(OMPDoacrossClause *C) {
+  llvm::SmallVector<Expr *, 16> Vars;
+  Vars.reserve(C->varlist_size());
+  for (auto *VE : C->varlists()) {
+    ExprResult EVar = getDerived().TransformExpr(cast<Expr>(VE));
+    if (EVar.isInvalid())
+      return nullptr;
+    Vars.push_back(EVar.get());
+  }
+  return getDerived().RebuildOMPDoacrossClause(
+      C->getDependenceType(), C->getDependenceLoc(), C->getColonLoc(), Vars,
+      C->getBeginLoc(), C->getLParenLoc(), C->getEndLoc());
+}
+
+template <typename Derived>
+OMPClause *
+TreeTransform<Derived>::TransformOMPXAttributeClause(OMPXAttributeClause *C) {
+  SmallVector<const Attr *> NewAttrs;
+  for (auto *A : C->getAttrs())
+    NewAttrs.push_back(getDerived().TransformAttr(A));
+  return getDerived().RebuildOMPXAttributeClause(
+      NewAttrs, C->getBeginLoc(), C->getLParenLoc(), C->getEndLoc());
+}
+
 //===----------------------------------------------------------------------===//
 // Expression transformation
 //===----------------------------------------------------------------------===//
@@ -12534,12 +12602,9 @@ TreeTransform<Derived>::TransformCXXPseudoDestructorExpr(
                                             E->getDestroyedTypeLoc());
   } else {
     // Look for a destructor known with the given name.
-    ParsedType T = SemaRef.getDestructorName(E->getTildeLoc(),
-                                              *E->getDestroyedTypeIdentifier(),
-                                                E->getDestroyedTypeLoc(),
-                                                /*Scope=*/nullptr,
-                                                SS, ObjectTypePtr,
-                                                false);
+    ParsedType T = SemaRef.getDestructorName(
+        *E->getDestroyedTypeIdentifier(), E->getDestroyedTypeLoc(),
+        /*Scope=*/nullptr, SS, ObjectTypePtr, false);
     if (!T)
       return ExprError();
 

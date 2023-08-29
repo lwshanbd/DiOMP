@@ -38,6 +38,7 @@
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/SmallString.h"
+#include "llvm/ADT/StringExtras.h"
 #include "llvm/IR/DerivedTypes.h"
 #include "llvm/Support/ErrorHandling.h"
 #include <bitset>
@@ -127,7 +128,6 @@ static void diagnoseBadTypeAttribute(Sema &S, const ParsedAttr &attr,
   case ParsedAttr::AT_VectorCall:                                              \
   case ParsedAttr::AT_AArch64VectorPcs:                                        \
   case ParsedAttr::AT_AArch64SVEPcs:                                           \
-  case ParsedAttr::AT_ArmStreaming:                                            \
   case ParsedAttr::AT_AMDGPUKernelCall:                                        \
   case ParsedAttr::AT_MSABI:                                                   \
   case ParsedAttr::AT_SysVABI:                                                 \
@@ -142,6 +142,10 @@ static void diagnoseBadTypeAttribute(Sema &S, const ParsedAttr &attr,
   case ParsedAttr::AT_NoReturn:                                                \
   case ParsedAttr::AT_Regparm:                                                 \
   case ParsedAttr::AT_CmseNSCall:                                              \
+  case ParsedAttr::AT_ArmStreaming:                                            \
+  case ParsedAttr::AT_ArmStreamingCompatible:                                  \
+  case ParsedAttr::AT_ArmSharedZA:                                             \
+  case ParsedAttr::AT_ArmPreservesZA:                                          \
   case ParsedAttr::AT_AnyX86NoCallerSavedRegisters:                            \
   case ParsedAttr::AT_AnyX86NoCfCheck:                                         \
     CALLING_CONV_ATTRS_CASELIST
@@ -1501,7 +1505,7 @@ static QualType ConvertDeclSpecToType(TypeProcessingState &state) {
   case DeclSpec::TST_int128:
     if (!S.Context.getTargetInfo().hasInt128Type() &&
         !(S.getLangOpts().SYCLIsDevice || S.getLangOpts().CUDAIsDevice ||
-          (S.getLangOpts().OpenMP && S.getLangOpts().OpenMPIsDevice)))
+          (S.getLangOpts().OpenMP && S.getLangOpts().OpenMPIsTargetDevice)))
       S.Diag(DS.getTypeSpecTypeLoc(), diag::err_type_unsupported)
         << "__int128";
     if (DS.getTypeSpecSign() == TypeSpecifierSign::Unsigned)
@@ -1514,7 +1518,7 @@ static QualType ConvertDeclSpecToType(TypeProcessingState &state) {
     // do not diagnose _Float16 usage to avoid false alarm.
     // ToDo: more precise diagnostics for CUDA.
     if (!S.Context.getTargetInfo().hasFloat16Type() && !S.getLangOpts().CUDA &&
-        !(S.getLangOpts().OpenMP && S.getLangOpts().OpenMPIsDevice))
+        !(S.getLangOpts().OpenMP && S.getLangOpts().OpenMPIsTargetDevice))
       S.Diag(DS.getTypeSpecTypeLoc(), diag::err_type_unsupported)
         << "_Float16";
     Result = Context.Float16Ty;
@@ -1522,7 +1526,7 @@ static QualType ConvertDeclSpecToType(TypeProcessingState &state) {
   case DeclSpec::TST_half:    Result = Context.HalfTy; break;
   case DeclSpec::TST_BFloat16:
     if (!S.Context.getTargetInfo().hasBFloat16Type() &&
-        !(S.getLangOpts().OpenMP && S.getLangOpts().OpenMPIsDevice) &&
+        !(S.getLangOpts().OpenMP && S.getLangOpts().OpenMPIsTargetDevice) &&
         !S.getLangOpts().SYCLIsDevice)
       S.Diag(DS.getTypeSpecTypeLoc(), diag::err_type_unsupported) << "__bf16";
     Result = Context.BFloat16Ty;
@@ -1547,7 +1551,7 @@ static QualType ConvertDeclSpecToType(TypeProcessingState &state) {
   case DeclSpec::TST_float128:
     if (!S.Context.getTargetInfo().hasFloat128Type() &&
         !S.getLangOpts().SYCLIsDevice &&
-        !(S.getLangOpts().OpenMP && S.getLangOpts().OpenMPIsDevice))
+        !(S.getLangOpts().OpenMP && S.getLangOpts().OpenMPIsTargetDevice))
       S.Diag(DS.getTypeSpecTypeLoc(), diag::err_type_unsupported)
         << "__float128";
     Result = Context.Float128Ty;
@@ -1555,7 +1559,7 @@ static QualType ConvertDeclSpecToType(TypeProcessingState &state) {
   case DeclSpec::TST_ibm128:
     if (!S.Context.getTargetInfo().hasIbm128Type() &&
         !S.getLangOpts().SYCLIsDevice &&
-        !(S.getLangOpts().OpenMP && S.getLangOpts().OpenMPIsDevice))
+        !(S.getLangOpts().OpenMP && S.getLangOpts().OpenMPIsTargetDevice))
       S.Diag(DS.getTypeSpecTypeLoc(), diag::err_type_unsupported) << "__ibm128";
     Result = Context.Ibm128Ty;
     break;
@@ -2201,11 +2205,19 @@ QualType Sema::BuildPointerType(QualType T,
   if (getLangOpts().OpenCL)
     T = deduceOpenCLPointeeAddrSpace(*this, T);
 
-  // In WebAssembly, pointers to reference types are illegal.
-  if (getASTContext().getTargetInfo().getTriple().isWasm() &&
-      T->isWebAssemblyReferenceType()) {
-    Diag(Loc, diag::err_wasm_reference_pr) << 0;
-    return QualType();
+  // In WebAssembly, pointers to reference types and pointers to tables are
+  // illegal.
+  if (getASTContext().getTargetInfo().getTriple().isWasm()) {
+    if (T.isWebAssemblyReferenceType()) {
+      Diag(Loc, diag::err_wasm_reference_pr) << 0;
+      return QualType();
+    }
+
+    // We need to desugar the type here in case T is a ParenType.
+    if (T->getUnqualifiedDesugaredType()->isWebAssemblyTableType()) {
+      Diag(Loc, diag::err_wasm_table_pr) << 0;
+      return QualType();
+    }
   }
 
   // Build the pointer type.
@@ -2283,10 +2295,14 @@ QualType Sema::BuildReferenceType(QualType T, bool SpelledAsLValue,
   if (getLangOpts().OpenCL)
     T = deduceOpenCLPointeeAddrSpace(*this, T);
 
-  // In WebAssembly, references to reference types are illegal.
+  // In WebAssembly, references to reference types and tables are illegal.
   if (getASTContext().getTargetInfo().getTriple().isWasm() &&
-      T->isWebAssemblyReferenceType()) {
+      T.isWebAssemblyReferenceType()) {
     Diag(Loc, diag::err_wasm_reference_pr) << 1;
+    return QualType();
+  }
+  if (T->isWebAssemblyTableType()) {
+    Diag(Loc, diag::err_wasm_table_pr) << 1;
     return QualType();
   }
 
@@ -2493,12 +2509,22 @@ QualType Sema::BuildArrayType(QualType T, ArrayType::ArraySizeModifier ASM,
   } else {
     // C99 6.7.5.2p1: If the element type is an incomplete or function type,
     // reject it (e.g. void ary[7], struct foo ary[7], void ary[7]())
-    if (RequireCompleteSizedType(Loc, T,
+    if (!T.isWebAssemblyReferenceType() &&
+        RequireCompleteSizedType(Loc, T,
                                  diag::err_array_incomplete_or_sizeless_type))
       return QualType();
   }
 
-  if (T->isSizelessType()) {
+  // Multi-dimensional arrays of WebAssembly references are not allowed.
+  if (Context.getTargetInfo().getTriple().isWasm() && T->isArrayType()) {
+    const auto *ATy = dyn_cast<ArrayType>(T);
+    if (ATy && ATy->getElementType().isWebAssemblyReferenceType()) {
+      Diag(Loc, diag::err_wasm_reftype_multidimensional_array);
+      return QualType();
+    }
+  }
+
+  if (T->isSizelessType() && !T.isWebAssemblyReferenceType()) {
     Diag(Loc, diag::err_array_incomplete_or_sizeless_type) << 1 << T;
     return QualType();
   }
@@ -2617,7 +2643,7 @@ QualType Sema::BuildArrayType(QualType T, ArrayType::ArraySizeModifier ASM,
               << ArraySize->getSourceRange();
         return QualType();
       }
-      if (ConstVal == 0) {
+      if (ConstVal == 0 && !T.isWebAssemblyReferenceType()) {
         // GCC accepts zero sized static arrays. We allow them when
         // we're not in a SFINAE context.
         Diag(ArraySize->getBeginLoc(),
@@ -2686,8 +2712,8 @@ QualType Sema::BuildVectorType(QualType CurType, Expr *SizeExpr,
     return QualType();
   }
   // Only support _BitInt elements with byte-sized power of 2 NumBits.
-  if (CurType->isBitIntType()) {
-    unsigned NumBits = CurType->getAs<BitIntType>()->getNumBits();
+  if (const auto *BIT = CurType->getAs<BitIntType>()) {
+    unsigned NumBits = BIT->getNumBits();
     if (!llvm::isPowerOf2_32(NumBits) || NumBits < 8) {
       Diag(AttrLoc, diag::err_attribute_invalid_bitint_vector_type)
           << (NumBits < 8);
@@ -2768,7 +2794,7 @@ QualType Sema::BuildExtVectorType(QualType T, Expr *ArraySize,
 
   // Only support _BitInt elements with byte-sized power of 2 NumBits.
   if (T->isBitIntType()) {
-    unsigned NumBits = T->getAs<BitIntType>()->getNumBits();
+    unsigned NumBits = T->castAs<BitIntType>()->getNumBits();
     if (!llvm::isPowerOf2_32(NumBits) || NumBits < 8) {
       Diag(AttrLoc, diag::err_attribute_invalid_bitint_vector_type)
           << (NumBits < 8);
@@ -3005,6 +3031,9 @@ QualType Sema::BuildFunctionType(QualType T,
       // Disallow half FP arguments.
       Diag(Loc, diag::err_parameters_retval_cannot_have_fp16_type) << 0 <<
         FixItHint::CreateInsertion(Loc, "*");
+      Invalid = true;
+    } else if (ParamType->isWebAssemblyTableType()) {
+      Diag(Loc, diag::err_wasm_table_as_function_parameter);
       Invalid = true;
     }
 
@@ -4026,7 +4055,8 @@ static CallingConv getCCForDeclaratorChunk(
       // function type.  We'll diagnose the failure to apply them in
       // handleFunctionTypeAttr.
       CallingConv CC;
-      if (!S.CheckCallingConvAttr(AL, CC) &&
+      if (!S.CheckCallingConvAttr(AL, CC, /*FunctionDecl=*/nullptr,
+                                  S.IdentifyCUDATarget(D.getAttributes())) &&
           (!FTI.isVariadic || supportsVariadicCall(CC))) {
         return CC;
       }
@@ -5402,7 +5432,7 @@ static TypeSourceInfo *GetFullTypeForDeclarator(TypeProcessingState &state,
           getCCForDeclaratorChunk(S, D, DeclType.getAttrs(), FTI, chunkIndex));
 
       // OpenCL disallows functions without a prototype, but it doesn't enforce
-      // strict prototypes as in C2x because it allows a function definition to
+      // strict prototypes as in C23 because it allows a function definition to
       // have an identifier list. See OpenCL 3.0 6.11/g for more details.
       if (!FTI.NumParams && !FTI.isVariadic &&
           !LangOpts.requiresStrictPrototypes() && !LangOpts.OpenCL) {
@@ -5411,9 +5441,9 @@ static TypeSourceInfo *GetFullTypeForDeclarator(TypeProcessingState &state,
       } else {
         // We allow a zero-parameter variadic function in C if the
         // function is marked with the "overloadable" attribute. Scan
-        // for this attribute now. We also allow it in C2x per WG14 N2975.
+        // for this attribute now. We also allow it in C23 per WG14 N2975.
         if (!FTI.NumParams && FTI.isVariadic && !LangOpts.CPlusPlus) {
-          if (LangOpts.C2x)
+          if (LangOpts.C23)
             S.Diag(FTI.getEllipsisLoc(),
                    diag::warn_c17_compat_ellipsis_only_parameter);
           else if (!D.getDeclarationAttributes().hasAttribute(
@@ -5721,7 +5751,7 @@ static TypeSourceInfo *GetFullTypeForDeclarator(TypeProcessingState &state,
   //   of that function specifies that no information about the number or types
   //   of the parameters is supplied.
   // See ActOnFinishFunctionBody() and MergeFunctionDecl() for handling of
-  // function declarations whose behavior changes in C2x.
+  // function declarations whose behavior changes in C23.
   if (!LangOpts.requiresStrictPrototypes()) {
     bool IsBlock = false;
     for (const DeclaratorChunk &DeclType : D.type_objects()) {
@@ -7746,6 +7776,26 @@ static Attr *getCCTypeAttr(ASTContext &Ctx, ParsedAttr &Attr) {
   llvm_unreachable("unexpected attribute kind!");
 }
 
+static bool checkMutualExclusion(TypeProcessingState &state,
+                                 const FunctionProtoType::ExtProtoInfo &EPI,
+                                 ParsedAttr &Attr,
+                                 AttributeCommonInfo::Kind OtherKind) {
+  auto OtherAttr = std::find_if(
+      state.getCurrentAttributes().begin(), state.getCurrentAttributes().end(),
+      [OtherKind](const ParsedAttr &A) { return A.getKind() == OtherKind; });
+  if (OtherAttr == state.getCurrentAttributes().end() || OtherAttr->isInvalid())
+    return false;
+
+  Sema &S = state.getSema();
+  S.Diag(Attr.getLoc(), diag::err_attributes_are_not_compatible)
+      << *OtherAttr << Attr
+      << (OtherAttr->isRegularKeywordAttribute() ||
+          Attr.isRegularKeywordAttribute());
+  S.Diag(OtherAttr->getLoc(), diag::note_conflicting_attribute);
+  Attr.setInvalid();
+  return true;
+}
+
 /// Process an individual function attribute.  Returns true to
 /// indicate that the attribute was handled, false if it wasn't.
 static bool handleFunctionTypeAttr(TypeProcessingState &state, ParsedAttr &attr,
@@ -7872,6 +7922,55 @@ static bool handleFunctionTypeAttr(TypeProcessingState &state, ParsedAttr &attr,
     FunctionType::ExtInfo EI =
       unwrapped.get()->getExtInfo().withRegParm(value);
     type = unwrapped.wrap(S, S.Context.adjustFunctionType(unwrapped.get(), EI));
+    return true;
+  }
+
+  if (attr.getKind() == ParsedAttr::AT_ArmStreaming ||
+      attr.getKind() == ParsedAttr::AT_ArmStreamingCompatible ||
+      attr.getKind() == ParsedAttr::AT_ArmSharedZA ||
+      attr.getKind() == ParsedAttr::AT_ArmPreservesZA){
+    if (S.CheckAttrTarget(attr) || S.CheckAttrNoArgs(attr))
+      return true;
+
+    if (!unwrapped.isFunctionType())
+      return false;
+
+    const auto *FnTy = unwrapped.get()->getAs<FunctionProtoType>();
+    if (!FnTy) {
+      // SME ACLE attributes are not supported on K&R-style unprototyped C
+      // functions.
+      S.Diag(attr.getLoc(), diag::warn_attribute_wrong_decl_type) <<
+        attr << attr.isRegularKeywordAttribute() << ExpectedFunctionWithProtoType;
+      attr.setInvalid();
+      return false;
+    }
+
+    FunctionProtoType::ExtProtoInfo EPI = FnTy->getExtProtoInfo();
+    switch (attr.getKind()) {
+    case ParsedAttr::AT_ArmStreaming:
+      if (checkMutualExclusion(state, EPI, attr,
+                               ParsedAttr::AT_ArmStreamingCompatible))
+        return true;
+      EPI.setArmSMEAttribute(FunctionType::SME_PStateSMEnabledMask);
+      break;
+    case ParsedAttr::AT_ArmStreamingCompatible:
+      if (checkMutualExclusion(state, EPI, attr, ParsedAttr::AT_ArmStreaming))
+        return true;
+      EPI.setArmSMEAttribute(FunctionType::SME_PStateSMCompatibleMask);
+      break;
+    case ParsedAttr::AT_ArmSharedZA:
+      EPI.setArmSMEAttribute(FunctionType::SME_PStateZASharedMask);
+      break;
+    case ParsedAttr::AT_ArmPreservesZA:
+      EPI.setArmSMEAttribute(FunctionType::SME_PStateZAPreservedMask);
+      break;
+    default:
+      llvm_unreachable("Unsupported attribute");
+    }
+
+    QualType newtype = S.Context.getFunctionType(FnTy->getReturnType(),
+                                                 FnTy->getParamTypes(), EPI);
+    type = unwrapped.wrap(S, newtype->getAs<FunctionType>());
     return true;
   }
 
@@ -8265,7 +8364,7 @@ static void HandleArmSveVectorBitsTypeAttr(QualType &CurType, ParsedAttr &Attr,
   }
 
   // Attribute can only be attached to a single SVE vector or predicate type.
-  if (!CurType->isVLSTBuiltinType()) {
+  if (!CurType->isSveVLSBuiltinType()) {
     S.Diag(Attr.getLoc(), diag::err_attribute_invalid_sve_type)
         << Attr << CurType;
     Attr.setInvalid();

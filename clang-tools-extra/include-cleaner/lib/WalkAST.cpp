@@ -126,13 +126,22 @@ public:
   }
 
   bool VisitDeclRefExpr(DeclRefExpr *DRE) {
-    // Static class members are handled here, as they don't produce MemberExprs.
-    if (DRE->getFoundDecl()->isCXXClassMember()) {
-      if (auto *Qual = DRE->getQualifier())
-        report(DRE->getLocation(), Qual->getAsRecordDecl(), RefType::Implicit);
-    } else {
-      report(DRE->getLocation(), DRE->getFoundDecl());
+    auto *FD = DRE->getFoundDecl();
+    // For refs to non-meber-like decls, use the found decl.
+    // For member-like decls, we should have a reference from the qualifier to
+    // the container decl instead, which is preferred as it'll handle
+    // aliases/exports properly.
+    if (!FD->isCXXClassMember() && !llvm::isa<EnumConstantDecl>(FD)) {
+      report(DRE->getLocation(), FD);
+      return true;
     }
+    // If the ref is without a qualifier, and is a member, ignore it. As it is
+    // available in current context due to some other construct (e.g. base
+    // specifiers, using decls) that has to spell the name explicitly.
+    // If it's an enum constant, it must be due to prior decl. Report references
+    // to it instead.
+    if (llvm::isa<EnumConstantDecl>(FD) && !DRE->hasQualifier())
+      report(DRE->getLocation(), FD);
     return true;
   }
 
@@ -214,6 +223,10 @@ public:
     return true;
   }
   bool VisitVarDecl(VarDecl *VD) {
+    // Ignore the parameter decl itself (its children were handled elsewhere),
+    // as they don't contribute to the main-file #include.
+    if (llvm::isa<ParmVarDecl>(VD))
+      return true;
     // Mark declaration from definition as it needs type-checking.
     if (VD->isThisDeclarationADefinition())
       report(VD->getLocation(), VD);
@@ -299,6 +312,16 @@ public:
       return true;
     }
     return RecursiveASTVisitor::TraverseTemplateArgumentLoc(TL);
+  }
+
+  bool VisitCXXStdInitializerListExpr(CXXStdInitializerListExpr *E) {
+    // Reliance on initializer_lists requires std::initializer_list to be
+    // visible per standard. So report a reference to it, otherwise include of
+    // `<initializer_list>` might not receive any use.
+    report(E->getExprLoc(),
+           const_cast<CXXRecordDecl *>(E->getBestDynamicClassType()),
+           RefType::Implicit);
+    return true;
   }
 };
 

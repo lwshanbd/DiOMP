@@ -624,6 +624,12 @@ void DataAggregator::processProfile(BinaryContext &BC) {
       BF.markProfiled(Flags);
   }
 
+  for (auto &FuncBranches : NamesToBranches)
+    llvm::stable_sort(FuncBranches.second.Data);
+
+  for (auto &MemEvents : NamesToMemEvents)
+    llvm::stable_sort(MemEvents.second.Data);
+
   // Release intermediate storage.
   clear(BranchLBRs);
   clear(FallthroughLBRs);
@@ -1473,13 +1479,10 @@ std::error_code DataAggregator::parseBranchEvents() {
     NumTraces += parseLBRSample(Sample, NeedsSkylakeFix);
   }
 
-  for (const auto &LBR : BranchLBRs) {
-    const Trace &Trace = LBR.first;
-    if (BinaryFunction *BF = getBinaryFunctionContainingAddress(Trace.From))
-      BF->setHasProfileAvailable();
-    if (BinaryFunction *BF = getBinaryFunctionContainingAddress(Trace.To))
-      BF->setHasProfileAvailable();
-  }
+  for (const Trace &Trace : llvm::make_first_range(BranchLBRs))
+    for (const uint64_t Addr : {Trace.From, Trace.To})
+      if (BinaryFunction *BF = getBinaryFunctionContainingAddress(Addr))
+        BF->setHasProfileAvailable();
 
   auto printColored = [](raw_ostream &OS, float Percent, float T1, float T2) {
     OS << " (";
@@ -1715,12 +1718,9 @@ std::error_code DataAggregator::parsePreAggregatedLBRSamples() {
     if (std::error_code EC = AggrEntry.getError())
       return EC;
 
-    if (BinaryFunction *BF =
-            getBinaryFunctionContainingAddress(AggrEntry->From.Offset))
-      BF->setHasProfileAvailable();
-    if (BinaryFunction *BF =
-            getBinaryFunctionContainingAddress(AggrEntry->To.Offset))
-      BF->setHasProfileAvailable();
+    for (const uint64_t Addr : {AggrEntry->From.Offset, AggrEntry->To.Offset})
+      if (BinaryFunction *BF = getBinaryFunctionContainingAddress(Addr))
+        BF->setHasProfileAvailable();
 
     AggregatedLBRs.emplace_back(std::move(AggrEntry.get()));
   }

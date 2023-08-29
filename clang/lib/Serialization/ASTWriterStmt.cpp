@@ -2235,6 +2235,7 @@ void ASTStmtWriter::VisitOMPExecutableDirective(OMPExecutableDirective *E) {
   Record.writeOMPChildren(E->Data);
   Record.AddSourceLocation(E->getBeginLoc());
   Record.AddSourceLocation(E->getEndLoc());
+  Record.writeEnum(E->getMappedDirective());
 }
 
 void ASTStmtWriter::VisitOMPLoopBasedDirective(OMPLoopBasedDirective *D) {
@@ -2305,6 +2306,12 @@ void ASTStmtWriter::VisitOMPSectionDirective(OMPSectionDirective *D) {
   VisitOMPExecutableDirective(D);
   Record.writeBool(D->hasCancel());
   Code = serialization::STMT_OMP_SECTION_DIRECTIVE;
+}
+
+void ASTStmtWriter::VisitOMPScopeDirective(OMPScopeDirective *D) {
+  VisitStmt(D);
+  VisitOMPExecutableDirective(D);
+  Code = serialization::STMT_OMP_SCOPE_DIRECTIVE;
 }
 
 void ASTStmtWriter::VisitOMPSingleDirective(OMPSingleDirective *D) {

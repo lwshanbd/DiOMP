@@ -42,6 +42,7 @@
 #include "Targets/X86.h"
 #include "Targets/XCore.h"
 #include "clang/Basic/Diagnostic.h"
+#include "clang/Basic/DiagnosticFrontend.h"
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/TargetParser/Triple.h"
 
@@ -540,8 +541,6 @@ std::unique_ptr<TargetInfo> AllocateTarget(const llvm::Triple &Triple,
       return std::make_unique<DarwinI386TargetInfo>(Triple, Opts);
 
     switch (os) {
-    case llvm::Triple::Ananas:
-      return std::make_unique<AnanasTargetInfo<X86_32TargetInfo>>(Triple, Opts);
     case llvm::Triple::CloudABI:
       return std::make_unique<CloudABITargetInfo<X86_32TargetInfo>>(Triple,
                                                                     Opts);
@@ -570,8 +569,6 @@ std::unique_ptr<TargetInfo> AllocateTarget(const llvm::Triple &Triple,
     case llvm::Triple::KFreeBSD:
       return std::make_unique<KFreeBSDTargetInfo<X86_32TargetInfo>>(Triple,
                                                                     Opts);
-    case llvm::Triple::Minix:
-      return std::make_unique<MinixTargetInfo<X86_32TargetInfo>>(Triple, Opts);
     case llvm::Triple::Solaris:
       return std::make_unique<SolarisTargetInfo<X86_32TargetInfo>>(Triple,
                                                                    Opts);
@@ -606,8 +603,6 @@ std::unique_ptr<TargetInfo> AllocateTarget(const llvm::Triple &Triple,
       return std::make_unique<DarwinX86_64TargetInfo>(Triple, Opts);
 
     switch (os) {
-    case llvm::Triple::Ananas:
-      return std::make_unique<AnanasTargetInfo<X86_64TargetInfo>>(Triple, Opts);
     case llvm::Triple::CloudABI:
       return std::make_unique<CloudABITargetInfo<X86_64TargetInfo>>(Triple,
                                                                     Opts);
@@ -816,6 +811,13 @@ TargetInfo::CreateTargetInfo(DiagnosticsEngine &Diags,
 
   // Compute the default target features, we need the target to handle this
   // because features may have dependencies on one another.
+  llvm::erase_if(Opts->FeaturesAsWritten, [&](StringRef Name) {
+    if (Target->isReadOnlyFeature(Name.substr(1))) {
+      Diags.Report(diag::warn_fe_backend_readonly_feature_flag) << Name;
+      return true;
+    }
+    return false;
+  });
   if (!Target->initFeatureMap(Opts->FeatureMap, Diags, Opts->CPU,
                               Opts->FeaturesAsWritten))
     return nullptr;

@@ -305,15 +305,51 @@ std::optional<dwarf::Tag> AppleAcceleratorTable::Entry::getTag() const {
   return std::nullopt;
 }
 
-AppleAcceleratorTable::ValueIterator::ValueIterator(
+AppleAcceleratorTable::SameNameIterator::SameNameIterator(
     const AppleAcceleratorTable &AccelTable, uint64_t DataOffset)
-    : Current(AccelTable), Offset(DataOffset) {
+    : Current(AccelTable), Offset(DataOffset) {}
+
+void AppleAcceleratorTable::Iterator::prepareNextEntryOrEnd() {
+  if (NumEntriesToCome == 0)
+    prepareNextStringOrEnd();
+  if (isEnd())
+    return;
+  uint64_t OffsetCopy = Offset;
+  Current.BaseEntry.extract(&OffsetCopy);
+  NumEntriesToCome--;
+  Offset += getTable().getHashDataEntryLength();
 }
 
-iterator_range<AppleAcceleratorTable::ValueIterator>
+void AppleAcceleratorTable::Iterator::prepareNextStringOrEnd() {
+  std::optional<uint32_t> StrOffset = getTable().readStringOffsetAt(Offset);
+  if (!StrOffset)
+    return setToEnd();
+
+  // A zero denotes the end of the collision list. Read the next string
+  // again.
+  if (*StrOffset == 0)
+    return prepareNextStringOrEnd();
+  Current.StrOffset = *StrOffset;
+
+  std::optional<uint32_t> MaybeNumEntries = getTable().readU32FromAccel(Offset);
+  if (!MaybeNumEntries || *MaybeNumEntries == 0)
+    return setToEnd();
+  NumEntriesToCome = *MaybeNumEntries;
+}
+
+AppleAcceleratorTable::Iterator::Iterator(const AppleAcceleratorTable &Table,
+                                          bool SetEnd)
+    : Current(Table), Offset(Table.getEntriesBase()), NumEntriesToCome(0) {
+  if (SetEnd)
+    setToEnd();
+  else
+    prepareNextEntryOrEnd();
+}
+
+iterator_range<AppleAcceleratorTable::SameNameIterator>
 AppleAcceleratorTable::equal_range(StringRef Key) const {
   const auto EmptyRange =
-      make_range(ValueIterator(*this, 0), ValueIterator(*this, 0));
+      make_range(SameNameIterator(*this, 0), SameNameIterator(*this, 0));
   if (!IsValid)
     return EmptyRange;
 
@@ -333,22 +369,20 @@ AppleAcceleratorTable::equal_range(StringRef Key) const {
     return EmptyRange;
 
   std::optional<uint32_t> StrOffset = readStringOffsetAt(DataOffset);
-
-  // Invalid input or no more strings in this hash.
-  if (!StrOffset || *StrOffset == 0)
-    return EmptyRange;
-
-  std::optional<StringRef> MaybeStr = readStringFromStrSection(*StrOffset);
-  std::optional<uint32_t> NumEntries = this->readU32FromAccel(DataOffset);
-  if (!MaybeStr || !NumEntries)
-    return EmptyRange;
-  if (Key == *MaybeStr) {
+  // Valid input and still have strings in this hash.
+  while (StrOffset && *StrOffset) {
+    std::optional<StringRef> MaybeStr = readStringFromStrSection(*StrOffset);
+    std::optional<uint32_t> NumEntries = this->readU32FromAccel(DataOffset);
+    if (!MaybeStr || !NumEntries)
+      return EmptyRange;
     uint64_t EndOffset = DataOffset + *NumEntries * getHashDataEntryLength();
-    return make_range({*this, DataOffset}, ValueIterator{*this, EndOffset});
+    if (Key == *MaybeStr)
+      return make_range({*this, DataOffset},
+                        SameNameIterator{*this, EndOffset});
+    DataOffset = EndOffset;
+    StrOffset = readStringOffsetAt(DataOffset);
   }
 
-  // FIXME: this shouldn't return, we haven't checked all the colliding strings
-  // in the bucket!
   return EmptyRange;
 }
 
@@ -934,4 +968,35 @@ DWARFDebugNames::getCUNameIndex(uint64_t CUOffset) {
     }
   }
   return CUToNameIndex.lookup(CUOffset);
+}
+
+std::optional<StringRef> llvm::StripTemplateParameters(StringRef Name) {
+  // We are looking for template parameters to strip from Name. e.g.
+  //
+  //  operator<<B>
+  //
+  // We look for > at the end but if it does not contain any < then we
+  // have something like operator>>. We check for the operator<=> case.
+  if (!Name.endswith(">") || Name.count("<") == 0 || Name.endswith("<=>"))
+    return {};
+
+  // How many < until we have the start of the template parameters.
+  size_t NumLeftAnglesToSkip = 1;
+
+  // If we have operator<=> then we need to skip its < as well.
+  NumLeftAnglesToSkip += Name.count("<=>");
+
+  size_t RightAngleCount = Name.count('>');
+  size_t LeftAngleCount = Name.count('<');
+
+  // If we have more < than > we have operator< or operator<<
+  // we to account for their < as well.
+  if (LeftAngleCount > RightAngleCount)
+    NumLeftAnglesToSkip += LeftAngleCount - RightAngleCount;
+
+  size_t StartOfTemplate = 0;
+  while (NumLeftAnglesToSkip--)
+    StartOfTemplate = Name.find('<', StartOfTemplate) + 1;
+
+  return Name.substr(0, StartOfTemplate - 1);
 }

@@ -1073,8 +1073,8 @@ void SampleProfileLoader::findExternalInlineCandidate(
     DenseSet<GlobalValue::GUID> &InlinedGUIDs,
     const StringMap<Function *> &SymbolMap, uint64_t Threshold) {
 
-  // If ExternalInlineAdvisor wants to inline an external function
-  // make sure it's imported
+  // If ExternalInlineAdvisor(ReplayInlineAdvisor) wants to inline an external
+  // function make sure it's imported
   if (CB && getExternalInlineAdvisorShouldInline(*CB)) {
     // Samples may not exist for replayed function, if so
     // just add the direct GUID and move on
@@ -1087,7 +1087,13 @@ void SampleProfileLoader::findExternalInlineCandidate(
     Threshold = 0;
   }
 
-  assert(Samples && "expect non-null caller profile");
+  // In some rare cases, call instruction could be changed after being pushed
+  // into inline candidate queue, this is because earlier inlining may expose
+  // constant propagation which can change indirect call to direct call. When
+  // this happens, we may fail to find matching function samples for the
+  // candidate later, even if a match was found when the candidate was enqueued.
+  if (!Samples)
+    return;
 
   // For AutoFDO profile, retrieve candidate profiles by walking over
   // the nested inlinee profiles.
@@ -1613,7 +1619,12 @@ void SampleProfileLoader::promoteMergeNotInlinedContextSamples(
         // Note that we have to do the merge right after processing function.
         // This allows OutlineFS's profile to be used for annotation during
         // top-down processing of functions' annotation.
-        FunctionSamples *OutlineFS = Reader->getOrCreateSamplesFor(*Callee);
+        FunctionSamples *OutlineFS = Reader->getSamplesFor(*Callee);
+        // If outlined function does not exist in the profile, add it to a
+        // separate map so that it does not rehash the original profile.
+        if (!OutlineFS)
+          OutlineFS = &OutlineFunctionSamples[
+              FunctionSamples::getCanonicalFnName(Callee->getName())];
         OutlineFS->merge(*FS, 1);
         // Set outlined profile to be synthetic to not bias the inliner.
         OutlineFS->SetContextSynthetic();
@@ -2046,6 +2057,16 @@ bool SampleProfileLoader::doInitialization(Module &M,
     if (Reader->profileIsPreInlined()) {
       if (!UsePreInlinerDecision.getNumOccurrences())
         UsePreInlinerDecision = true;
+    }
+
+    // Enable stale profile matching by default for probe-based profile.
+    // Currently the matching relies on if the checksum mismatch is detected,
+    // which is currently only available for pseudo-probe mode. Removing the
+    // checksum check could cause regressions for some cases, so further tuning
+    // might be needed if we want to enable it for all cases.
+    if (Reader->profileIsProbeBased() &&
+        !SalvageStaleProfile.getNumOccurrences()) {
+      SalvageStaleProfile = true;
     }
 
     if (!Reader->profileIsCS()) {
@@ -2555,8 +2576,24 @@ bool SampleProfileLoader::runOnFunction(Function &F, ModuleAnalysisManager *AM) 
 
   if (FunctionSamples::ProfileIsCS)
     Samples = ContextTracker->getBaseSamplesFor(F);
-  else
+  else {
     Samples = Reader->getSamplesFor(F);
+    // Try search in previously inlined functions that were split or duplicated
+    // into base.
+    if (!Samples) {
+      StringRef CanonName = FunctionSamples::getCanonicalFnName(F);
+      auto It = OutlineFunctionSamples.find(CanonName);
+      if (It != OutlineFunctionSamples.end()) {
+        Samples = &It->second;
+      } else if (auto Remapper = Reader->getRemapper()) {
+        if (auto RemppedName = Remapper->lookUpNameInProfile(CanonName)) {
+          It = OutlineFunctionSamples.find(*RemppedName);
+          if (It != OutlineFunctionSamples.end())
+            Samples = &It->second;
+        }
+      }
+    }
+  }
 
   if (Samples && !Samples->empty())
     return emitAnnotations(F);

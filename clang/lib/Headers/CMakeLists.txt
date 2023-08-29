@@ -160,6 +160,7 @@ set(x86_files
   avxifmaintrin.h
   avxintrin.h
   avxneconvertintrin.h
+  avxvnniint16intrin.h
   avxvnniint8intrin.h
   avxvnniintrin.h
   bmi2intrin.h
@@ -203,7 +204,10 @@ set(x86_files
   rtmintrin.h
   serializeintrin.h
   sgxintrin.h
+  sha512intrin.h
   shaintrin.h
+  sm3intrin.h
+  sm4intrin.h
   smmintrin.h
   tbmintrin.h
   tmmintrin.h
@@ -281,6 +285,7 @@ set(ppc_wrapper_files
   ppc_wrappers/pmmintrin.h
   ppc_wrappers/tmmintrin.h
   ppc_wrappers/smmintrin.h
+  ppc_wrappers/nmmintrin.h
   ppc_wrappers/bmiintrin.h
   ppc_wrappers/bmi2intrin.h
   ppc_wrappers/immintrin.h
@@ -296,6 +301,14 @@ set(openmp_wrapper_files
   openmp_wrappers/__clang_openmp_device_functions.h
   openmp_wrappers/complex_cmath.h
   openmp_wrappers/new
+)
+
+set(llvm_libc_wrapper_files
+  llvm_libc_wrappers/stdio.h
+  llvm_libc_wrappers/stdlib.h
+  llvm_libc_wrappers/string.h
+  llvm_libc_wrappers/ctype.h
+  llvm_libc_wrappers/inttypes.h
 )
 
 include(GetClangResourceDir)
@@ -333,7 +346,8 @@ endfunction(clang_generate_header)
 
 # Copy header files from the source directory to the build directory
 foreach( f ${files} ${cuda_wrapper_files} ${cuda_wrapper_bits_files}
-           ${ppc_wrapper_files} ${openmp_wrapper_files} ${hlsl_files})
+           ${ppc_wrapper_files} ${openmp_wrapper_files} ${hlsl_files}
+           ${llvm_libc_wrapper_files})
   copy_header_to_output_dir(${CMAKE_CURRENT_SOURCE_DIR} ${f})
 endforeach( f )
 
@@ -427,6 +441,7 @@ add_dependencies("clang-resource-headers"
                  "x86-resource-headers"
                  "opencl-resource-headers"
                  "openmp-resource-headers"
+                 "llvm-libc-resource-headers"
                  "windows-resource-headers"
                  "utility-resource-headers")
 
@@ -453,6 +468,7 @@ add_header_target("x86-resource-headers" "${x86_files}")
 # Other header groupings
 add_header_target("hlsl-resource-headers" ${hlsl_files})
 add_header_target("opencl-resource-headers" ${opencl_files})
+add_header_target("llvm-libc-resource-headers" ${llvm_libc_wrapper_files})
 add_header_target("openmp-resource-headers" ${openmp_wrapper_files})
 add_header_target("windows-resource-headers" ${windows_only_files})
 add_header_target("utility-resource-headers" ${utility_files})
@@ -479,6 +495,11 @@ install(
 install(
   FILES ${ppc_wrapper_files}
   DESTINATION ${header_install_dir}/ppc_wrappers
+  COMPONENT clang-resource-headers)
+
+install(
+  FILES ${llvm_libc_wrapper_files}
+  DESTINATION ${header_install_dir}/llvm_libc_wrappers
   COMPONENT clang-resource-headers)
 
 install(
@@ -583,7 +604,7 @@ install(
   DESTINATION ${header_install_dir}
   EXCLUDE_FROM_ALL
   COMPONENT riscv-resource-headers)
-  
+
 install(
   FILES ${systemz_files}
   DESTINATION ${header_install_dir}
@@ -629,6 +650,12 @@ install(
   DESTINATION ${header_install_dir}
   EXCLUDE_FROM_ALL
   COMPONENT opencl-resource-headers)
+
+install(
+  FILES ${openmp_wrapper_files}
+  DESTINATION ${header_install_dir}/openmp_wrappers
+  EXCLUDE_FROM_ALL
+  COMPONENT openmp-resource-headers)
 
 install(
   FILES ${openmp_wrapper_files}

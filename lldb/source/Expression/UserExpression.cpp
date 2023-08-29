@@ -14,7 +14,6 @@
 #include <string>
 
 #include "lldb/Core/Module.h"
-#include "lldb/Core/StreamFile.h"
 #include "lldb/Core/ValueObjectConstResult.h"
 #include "lldb/Expression/DiagnosticManager.h"
 #include "lldb/Expression/ExpressionVariable.h"
@@ -330,11 +329,10 @@ UserExpression::Evaluate(ExecutionContext &exe_ctx,
       std::string msg;
       {
         llvm::raw_string_ostream os(msg);
-        os << "expression failed to parse:\n";
         if (!diagnostic_manager.Diagnostics().empty())
           os << diagnostic_manager.GetString();
         else
-          os << "unknown error";
+          os << "expression failed to parse (no further compiler diagnostics)";
         if (target->GetEnableNotifyAboutFixIts() && fixed_expression &&
             !fixed_expression->empty())
           os << "\nfixed expression suggested:\n  " << *fixed_expression;

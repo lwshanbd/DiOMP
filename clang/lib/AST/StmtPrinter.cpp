@@ -400,7 +400,9 @@ void StmtPrinter::VisitForStmt(ForStmt *Node) {
     PrintInitStmt(Node->getInit(), 5);
   else
     OS << (Node->getCond() ? "; " : ";");
-  if (Node->getCond())
+  if (const DeclStmt *DS = Node->getConditionVariableDeclStmt())
+    PrintRawDeclStmt(DS);
+  else if (Node->getCond())
     PrintExpr(Node->getCond());
   OS << ";";
   if (Node->getInc()) {
@@ -772,6 +774,11 @@ void StmtPrinter::VisitOMPSectionsDirective(OMPSectionsDirective *Node) {
 
 void StmtPrinter::VisitOMPSectionDirective(OMPSectionDirective *Node) {
   Indent() << "#pragma omp section";
+  PrintOMPExecutableDirective(Node);
+}
+
+void StmtPrinter::VisitOMPScopeDirective(OMPScopeDirective *Node) {
+  Indent() << "#pragma omp scope";
   PrintOMPExecutableDirective(Node);
 }
 

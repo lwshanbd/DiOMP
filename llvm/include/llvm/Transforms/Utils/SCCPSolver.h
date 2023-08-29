@@ -32,8 +32,6 @@ class Function;
 class GlobalVariable;
 class Instruction;
 class LLVMContext;
-class LoopInfo;
-class PostDominatorTree;
 class StructType;
 class TargetLibraryInfo;
 class Value;
@@ -160,7 +158,7 @@ public:
 
   /// Helper to return a Constant if \p LV is either a constant or a constant
   /// range with a single element.
-  Constant *getConstant(const ValueLatticeElement &LV) const;
+  Constant *getConstant(const ValueLatticeElement &LV, Type *Ty) const;
 
   /// Return either a Constant or nullptr for a given Value.
   Constant *getConstantOrNull(Value *V) const;

@@ -175,7 +175,6 @@ public:
     MipsTechnologies,
     NVIDIA,
     CSR,
-    Myriad,
     AMD,
     Mesa,
     SUSE,
@@ -185,7 +184,6 @@ public:
   enum OSType {
     UnknownOS,
 
-    Ananas,
     CloudABI,
     Darwin,
     DragonFly,
@@ -203,7 +201,6 @@ public:
     Win32,
     ZOS,
     Haiku,
-    Minix,
     RTEMS,
     NaCl,       // Native Client
     AIX,
@@ -217,7 +214,6 @@ public:
     WatchOS,    // Apple watchOS
     DriverKit,  // Apple DriverKit
     Mesa3D,
-    Contiki,
     AMDPAL,     // AMD PAL Runtime
     HermitCore, // HermitCore Unikernel/Multikernel
     Hurd,       // GNU/Hurd
@@ -572,10 +568,6 @@ public:
            Env == Triple::GNUX32;
   }
 
-  bool isOSContiki() const {
-    return getOS() == Triple::Contiki;
-  }
-
   /// Tests whether the OS is Haiku.
   bool isOSHaiku() const {
     return getOS() == Triple::Haiku;
@@ -863,10 +855,14 @@ public:
                : PointerWidth == 64;
   }
 
+  /// Tests whether the target is 32-bit LoongArch.
+  bool isLoongArch32() const { return getArch() == Triple::loongarch32; }
+
+  /// Tests whether the target is 64-bit LoongArch.
+  bool isLoongArch64() const { return getArch() == Triple::loongarch64; }
+
   /// Tests whether the target is LoongArch (32- and 64-bit).
-  bool isLoongArch() const {
-    return getArch() == Triple::loongarch32 || getArch() == Triple::loongarch64;
-  }
+  bool isLoongArch() const { return isLoongArch32() || isLoongArch64(); }
 
   /// Tests whether the target is MIPS 32-bit (little and big endian).
   bool isMIPS32() const {
