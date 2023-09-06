@@ -15,6 +15,7 @@
 #include "clang/Basic/FileEntry.h"
 #include "clang/Basic/LangStandard.h"
 #include "clang/Basic/Sarif.h"
+#include "clang/Basic/Stack.h"
 #include "clang/Frontend/ASTUnit.h"
 #include "clang/Frontend/CompilerInstance.h"
 #include "clang/Frontend/FrontendDiagnostic.h"
@@ -665,7 +666,7 @@ bool FrontendAction::BeginSourceFile(CompilerInstance &CI,
     } else {
       auto &OldSM = AST->getSourceManager();
       FileID ID = OldSM.getMainFileID();
-      if (auto *File = OldSM.getFileEntryForID(ID))
+      if (auto File = OldSM.getFileEntryRefForID(ID))
         Input = FrontendInputFile(File->getName(), Kind);
       else
         Input = FrontendInputFile(OldSM.getBufferOrFake(ID), Kind);
@@ -843,7 +844,7 @@ bool FrontendAction::BeginSourceFile(CompilerInstance &CI,
         return false;
       }
       // We now have the filename...
-      FileName = FE->getFileEntry().getName();
+      FileName = FE->getName();
       // ... still a header unit, but now use the path as written.
       Kind = Input.getKind().withHeaderUnit(InputKind::HeaderUnit_Abs);
       Input = FrontendInputFile(FileName, Kind, Input.isSystem());
@@ -1155,6 +1156,10 @@ void ASTFrontendAction::ExecuteAction() {
   CompilerInstance &CI = getCompilerInstance();
   if (!CI.hasPreprocessor())
     return;
+  // This is a fallback: If the client forgets to invoke this, we mark the
+  // current stack as the bottom. Though not optimal, this could help prevent
+  // stack overflow during deep recursion.
+  clang::noteBottomOfStack();
 
   // FIXME: Move the truncation aspect of this into Sema, we delayed this till
   // here so the source manager would be initialized.
