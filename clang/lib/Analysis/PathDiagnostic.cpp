@@ -338,7 +338,8 @@ static bool compareCrossTUSourceLocs(FullSourceLoc XL, FullSourceLoc YL) {
     return XL.isBeforeInTranslationUnitThan(YL);
   OptionalFileEntryRef XFE =
       SM.getFileEntryRefForID(XL.getSpellingLoc().getFileID());
-  OptionalFileEntryRef YFE = SM.getFileEntryRefForID(YL.getSpellingLoc().getFileID());
+  OptionalFileEntryRef YFE =
+      SM.getFileEntryRefForID(YL.getSpellingLoc().getFileID());
   if (!XFE || !YFE)
     return XFE && !YFE;
   int NameCmp = XFE->getName().compare(YFE->getName());
@@ -566,6 +567,7 @@ getLocationForCaller(const StackFrameContext *SFC,
   }
   case CFGElement::ScopeBegin:
   case CFGElement::ScopeEnd:
+  case CFGElement::CleanupFunction:
     llvm_unreachable("not yet implemented!");
   case CFGElement::LifetimeEnds:
   case CFGElement::LoopExit:

@@ -30,10 +30,10 @@
 // Do the same run, but now with direct IR generation and VLA vectorization.
 // RUN: %if mlir_arm_sve_tests %{ %{compile_sve} | %{run_sve} | FileCheck %s %}
 
-#DCSR = #sparse_tensor.encoding<{ lvlTypes = [ "compressed", "compressed" ] }>
+#DCSR = #sparse_tensor.encoding<{ map = (d0, d1) -> (d0 : compressed, d1 : compressed) }>
 
 // An example of a quantized sparse matmul. With the zero offset for the
-// sparse input, the sparse compiler generates very efficient code for the
+// sparse input, the sparsifier generates very efficient code for the
 //      x(i,j) += (ext(a(i,k)) - 2) * ext(b(k,j))
 // operation.
 module {

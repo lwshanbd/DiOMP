@@ -30,7 +30,7 @@
 // Do the same run, but now with direct IR generation and VLA vectorization.
 // RUN: %if mlir_arm_sve_tests %{ %{compile_sve} | %{run_sve} | FileCheck %s %}
 
-#SV = #sparse_tensor.encoding<{ lvlTypes = [ "compressed" ] }>
+#SV = #sparse_tensor.encoding<{ map = (d0) -> (d0 : compressed) }>
 
 #trait_reduction = {
   indexing_maps = [
@@ -63,7 +63,7 @@ module {
 
   // Regular MIN reduction: stored i32 elements AND implicit zeros.
   // Note that dealing with the implicit zeros is taken care of
-  // by the sparse compiler to preserve semantics of the "original".
+  // by the sparsifier to preserve semantics of the "original".
   func.func @min2(%arga: tensor<32xi32, #SV>, %argx: tensor<i32>) -> tensor<i32> {
     %c = tensor.extract %argx[] : tensor<i32>
     %0 = linalg.generic #trait_reduction

@@ -1541,18 +1541,6 @@ struct Attributor {
                                     /* ForceUpdate */ false);
   }
 
-  /// Similar to getAAFor but the return abstract attribute will be updated (via
-  /// `AbstractAttribute::update`) even if it is found in the cache. This is
-  /// especially useful for AAIsDead as changes in liveness can make updates
-  /// possible/useful that were not happening before as the abstract attribute
-  /// was assumed dead.
-  template <typename AAType>
-  const AAType *getAndUpdateAAFor(const AbstractAttribute &QueryingAA,
-                                  const IRPosition &IRP, DepClassTy DepClass) {
-    return getOrCreateAAFor<AAType>(IRP, &QueryingAA, DepClass,
-                                    /* ForceUpdate */ true);
-  }
-
   /// The version of getAAFor that allows to omit a querying abstract
   /// attribute. Using this after Attributor started running is restricted to
   /// only the Attributor itself. Initial seeding of AAs can be done via this
@@ -2124,6 +2112,15 @@ public:
   bool isAssumedDead(const BasicBlock &BB, const AbstractAttribute *QueryingAA,
                      const AAIsDead *FnLivenessAA,
                      DepClassTy DepClass = DepClassTy::OPTIONAL);
+
+  /// Check \p Pred on all potential Callees of \p CB.
+  ///
+  /// This method will evaluate \p Pred with all potential callees of \p CB as
+  /// input and return true if \p Pred does. If some callees might be unknown
+  /// this function will return false.
+  bool checkForAllCallees(
+      function_ref<bool(ArrayRef<const Function *> Callees)> Pred,
+      const AbstractAttribute &QueryingAA, const CallBase &CB);
 
   /// Check \p Pred on all (transitive) uses of \p V.
   ///
@@ -3295,7 +3292,7 @@ struct AbstractAttribute : public IRPosition, public AADepGraphNode {
 
   /// Return true if this AA requires a "callee" (or an associted function) for
   /// a call site positon. Default is optimistic to minimize AAs.
-  static bool requiresCalleeForCallBase() { return true; }
+  static bool requiresCalleeForCallBase() { return false; }
 
   /// Return true if this AA requires non-asm "callee" for a call site positon.
   static bool requiresNonAsmForCallBase() { return true; }
@@ -3851,9 +3848,6 @@ struct AANoAlias
   static bool isImpliedByIR(Attributor &A, const IRPosition &IRP,
                             Attribute::AttrKind ImpliedAttributeKind,
                             bool IgnoreSubsumingPositions = false);
-
-  /// See AbstractAttribute::requiresCalleeForCallBase
-  static bool requiresCalleeForCallBase() { return false; }
 
   /// See AbstractAttribute::requiresCallersForArgOrFunction
   static bool requiresCallersForArgOrFunction() { return true; }
@@ -4699,6 +4693,9 @@ struct AAMemoryLocation
 
   AAMemoryLocation(const IRPosition &IRP, Attributor &A) : IRAttribute(IRP) {}
 
+  /// See AbstractAttribute::requiresCalleeForCallBase.
+  static bool requiresCalleeForCallBase() { return true; }
+
   /// See AbstractAttribute::hasTrivialInitializer.
   static bool hasTrivialInitializer() { return false; }
 
@@ -5480,10 +5477,6 @@ struct AACallEdges : public StateWrapper<BooleanState, AbstractAttribute>,
 
   AACallEdges(const IRPosition &IRP, Attributor &A)
       : Base(IRP), AACallGraphNode(A) {}
-
-  /// The callee value is tracked beyond a simple stripPointerCasts, so we allow
-  /// unknown callees.
-  static bool requiresCalleeForCallBase() { return false; }
 
   /// See AbstractAttribute::requiresNonAsmForCallBase.
   static bool requiresNonAsmForCallBase() { return false; }
@@ -6309,9 +6302,6 @@ struct AAIndirectCallInfo
     : public StateWrapper<BooleanState, AbstractAttribute> {
   AAIndirectCallInfo(const IRPosition &IRP, Attributor &A)
       : StateWrapper<BooleanState, AbstractAttribute>(IRP) {}
-
-  /// The point is to derive callees, after all.
-  static bool requiresCalleeForCallBase() { return false; }
 
   /// See AbstractAttribute::isValidIRPositionForInit
   static bool isValidIRPositionForInit(Attributor &A, const IRPosition &IRP) {

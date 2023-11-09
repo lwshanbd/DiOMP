@@ -48,7 +48,6 @@
 #include "lldb/Interpreter/OptionValueProperties.h"
 #include "lldb/Interpreter/Options.h"
 #include "lldb/Interpreter/Property.h"
-#include "lldb/Symbol/LocateSymbolFile.h"
 #include "lldb/Symbol/ObjectFile.h"
 #include "lldb/Target/ABI.h"
 #include "lldb/Target/DynamicLoader.h"
@@ -1612,6 +1611,22 @@ bool ProcessGDBRemote::CalculateThreadStopInfo(ThreadGDBRemote *thread) {
   return false;
 }
 
+void ProcessGDBRemote::ParseExpeditedRegisters(
+    ExpeditedRegisterMap &expedited_register_map, ThreadSP thread_sp) {
+  ThreadGDBRemote *gdb_thread = static_cast<ThreadGDBRemote *>(thread_sp.get());
+  RegisterContextSP gdb_reg_ctx_sp(gdb_thread->GetRegisterContext());
+
+  for (const auto &pair : expedited_register_map) {
+    StringExtractor reg_value_extractor(pair.second);
+    WritableDataBufferSP buffer_sp(
+        new DataBufferHeap(reg_value_extractor.GetStringRef().size() / 2, 0));
+    reg_value_extractor.GetHexBytes(buffer_sp->GetData(), '\xcc');
+    uint32_t lldb_regnum = gdb_reg_ctx_sp->ConvertRegisterKindToRegisterNumber(
+        eRegisterKindProcessPlugin, pair.first);
+    gdb_thread->PrivateSetRegisterValue(lldb_regnum, buffer_sp->GetData());
+  }
+}
+
 ThreadSP ProcessGDBRemote::SetThreadStopInfo(
     lldb::tid_t tid, ExpeditedRegisterMap &expedited_register_map,
     uint8_t signo, const std::string &thread_name, const std::string &reason,
@@ -1642,35 +1657,24 @@ ThreadSP ProcessGDBRemote::SetThreadStopInfo(
   }
 
   ThreadGDBRemote *gdb_thread = static_cast<ThreadGDBRemote *>(thread_sp.get());
-  RegisterContextSP gdb_reg_ctx_sp(gdb_thread->GetRegisterContext());
+  RegisterContextSP reg_ctx_sp(gdb_thread->GetRegisterContext());
 
-  gdb_reg_ctx_sp->InvalidateIfNeeded(true);
+  reg_ctx_sp->InvalidateIfNeeded(true);
 
   auto iter = std::find(m_thread_ids.begin(), m_thread_ids.end(), tid);
   if (iter != m_thread_ids.end())
     SetThreadPc(thread_sp, iter - m_thread_ids.begin());
 
-  for (const auto &pair : expedited_register_map) {
-    StringExtractor reg_value_extractor(pair.second);
-    WritableDataBufferSP buffer_sp(
-        new DataBufferHeap(reg_value_extractor.GetStringRef().size() / 2, 0));
-    reg_value_extractor.GetHexBytes(buffer_sp->GetData(), '\xcc');
-    uint32_t lldb_regnum = gdb_reg_ctx_sp->ConvertRegisterKindToRegisterNumber(
-        eRegisterKindProcessPlugin, pair.first);
-    gdb_thread->PrivateSetRegisterValue(lldb_regnum, buffer_sp->GetData());
-  }
+  ParseExpeditedRegisters(expedited_register_map, thread_sp);
 
-  // AArch64 SVE specific code below calls AArch64SVEReconfigure to update
-  // SVE register sizes and offsets if value of VG register has changed
-  // since last stop.
-  const ArchSpec &arch = GetTarget().GetArchitecture();
-  if (arch.IsValid() && arch.GetTriple().isAArch64()) {
-    GDBRemoteRegisterContext *reg_ctx_sp =
-        static_cast<GDBRemoteRegisterContext *>(
-            gdb_thread->GetRegisterContext().get());
-
-    if (reg_ctx_sp)
-      reg_ctx_sp->AArch64SVEReconfigure();
+  if (reg_ctx_sp->ReconfigureRegisterInfo()) {
+    // Now we have changed the offsets of all the registers, so the values
+    // will be corrupted.
+    reg_ctx_sp->InvalidateAllRegisters();
+    // Expedited registers values will never contain registers that would be
+    // resized by a reconfigure. So we are safe to continue using these
+    // values.
+    ParseExpeditedRegisters(expedited_register_map, thread_sp);
   }
 
   thread_sp->SetName(thread_name.empty() ? nullptr : thread_name.c_str());
@@ -1926,24 +1930,23 @@ ThreadSP ProcessGDBRemote::SetThreadStopInfo(
 
 lldb::ThreadSP
 ProcessGDBRemote::SetThreadStopInfo(StructuredData::Dictionary *thread_dict) {
-  static ConstString g_key_tid("tid");
-  static ConstString g_key_name("name");
-  static ConstString g_key_reason("reason");
-  static ConstString g_key_metype("metype");
-  static ConstString g_key_medata("medata");
-  static ConstString g_key_qaddr("qaddr");
-  static ConstString g_key_dispatch_queue_t("dispatch_queue_t");
-  static ConstString g_key_associated_with_dispatch_queue(
+  static constexpr llvm::StringLiteral g_key_tid("tid");
+  static constexpr llvm::StringLiteral g_key_name("name");
+  static constexpr llvm::StringLiteral g_key_reason("reason");
+  static constexpr llvm::StringLiteral g_key_metype("metype");
+  static constexpr llvm::StringLiteral g_key_medata("medata");
+  static constexpr llvm::StringLiteral g_key_qaddr("qaddr");
+  static constexpr llvm::StringLiteral g_key_dispatch_queue_t(
+      "dispatch_queue_t");
+  static constexpr llvm::StringLiteral g_key_associated_with_dispatch_queue(
       "associated_with_dispatch_queue");
-  static ConstString g_key_queue_name("qname");
-  static ConstString g_key_queue_kind("qkind");
-  static ConstString g_key_queue_serial_number("qserialnum");
-  static ConstString g_key_registers("registers");
-  static ConstString g_key_memory("memory");
-  static ConstString g_key_address("address");
-  static ConstString g_key_bytes("bytes");
-  static ConstString g_key_description("description");
-  static ConstString g_key_signal("signal");
+  static constexpr llvm::StringLiteral g_key_queue_name("qname");
+  static constexpr llvm::StringLiteral g_key_queue_kind("qkind");
+  static constexpr llvm::StringLiteral g_key_queue_serial_number("qserialnum");
+  static constexpr llvm::StringLiteral g_key_registers("registers");
+  static constexpr llvm::StringLiteral g_key_memory("memory");
+  static constexpr llvm::StringLiteral g_key_description("description");
+  static constexpr llvm::StringLiteral g_key_signal("signal");
 
   // Stop with signal and thread info
   lldb::tid_t tid = LLDB_INVALID_THREAD_ID;
@@ -1971,7 +1974,7 @@ ProcessGDBRemote::SetThreadStopInfo(StructuredData::Dictionary *thread_dict) {
                         &thread_dispatch_qaddr, &queue_vars_valid,
                         &associated_with_dispatch_queue, &dispatch_queue_t,
                         &queue_name, &queue_kind, &queue_serial_number](
-                           ConstString key,
+                           llvm::StringRef key,
                            StructuredData::Object *object) -> bool {
     if (key == g_key_tid) {
       // thread in big endian hex
@@ -2029,10 +2032,10 @@ ProcessGDBRemote::SetThreadStopInfo(StructuredData::Dictionary *thread_dict) {
 
       if (registers_dict) {
         registers_dict->ForEach(
-            [&expedited_register_map](ConstString key,
+            [&expedited_register_map](llvm::StringRef key,
                                       StructuredData::Object *object) -> bool {
               uint32_t reg;
-              if (llvm::to_integer(key.AsCString(), reg))
+              if (llvm::to_integer(key, reg))
                 expedited_register_map[reg] =
                     std::string(object->GetStringValue());
               return true; // Keep iterating through all array items
@@ -3109,14 +3112,16 @@ static GDBStoppointType GetGDBStoppointType(Watchpoint *wp) {
   assert(wp);
   bool watch_read = wp->WatchpointRead();
   bool watch_write = wp->WatchpointWrite();
+  bool watch_modify = wp->WatchpointModify();
 
-  // watch_read and watch_write cannot both be false.
-  assert(watch_read || watch_write);
-  if (watch_read && watch_write)
+  // watch_read, watch_write, watch_modify cannot all be false.
+  assert((watch_read || watch_write || watch_modify) &&
+         "watch_read, watch_write, watch_modify cannot all be false.");
+  if (watch_read && (watch_write || watch_modify))
     return eWatchpointReadWrite;
   else if (watch_read)
     return eWatchpointRead;
-  else // Must be watch_write, then.
+  else // Must be watch_write or watch_modify, then.
     return eWatchpointWrite;
 }
 
@@ -5177,7 +5182,7 @@ public:
 
   Options *GetOptions() override { return &m_option_group; }
 
-  bool DoExecute(Args &command, CommandReturnObject &result) override {
+  void DoExecute(Args &command, CommandReturnObject &result) override {
     const size_t argc = command.GetArgumentCount();
     if (argc == 0) {
       ProcessGDBRemote *process =
@@ -5199,14 +5204,13 @@ public:
             num_packets, max_send, max_recv, k_recv_amount, json,
             output_stream_sp ? *output_stream_sp : result.GetOutputStream());
         result.SetStatus(eReturnStatusSuccessFinishResult);
-        return true;
+        return;
       }
     } else {
       result.AppendErrorWithFormat("'%s' takes no arguments",
                                    m_cmd_name.c_str());
     }
     result.SetStatus(eReturnStatusFailed);
-    return false;
   }
 
 protected:
@@ -5226,16 +5230,15 @@ public:
 
   ~CommandObjectProcessGDBRemotePacketHistory() override = default;
 
-  bool DoExecute(Args &command, CommandReturnObject &result) override {
+  void DoExecute(Args &command, CommandReturnObject &result) override {
     ProcessGDBRemote *process =
         (ProcessGDBRemote *)m_interpreter.GetExecutionContext().GetProcessPtr();
     if (process) {
       process->DumpPluginHistory(result.GetOutputStream());
       result.SetStatus(eReturnStatusSuccessFinishResult);
-      return true;
+      return;
     }
     result.SetStatus(eReturnStatusFailed);
-    return false;
   }
 };
 
@@ -5253,14 +5256,14 @@ public:
 
   ~CommandObjectProcessGDBRemotePacketXferSize() override = default;
 
-  bool DoExecute(Args &command, CommandReturnObject &result) override {
+  void DoExecute(Args &command, CommandReturnObject &result) override {
     const size_t argc = command.GetArgumentCount();
     if (argc == 0) {
       result.AppendErrorWithFormat("'%s' takes an argument to specify the max "
                                    "amount to be transferred when "
                                    "reading/writing",
                                    m_cmd_name.c_str());
-      return false;
+      return;
     }
 
     ProcessGDBRemote *process =
@@ -5272,11 +5275,10 @@ public:
       if (errno == 0 && user_specified_max != 0) {
         process->SetUserSpecifiedMaxMemoryTransferSize(user_specified_max);
         result.SetStatus(eReturnStatusSuccessFinishResult);
-        return true;
+        return;
       }
     }
     result.SetStatus(eReturnStatusFailed);
-    return false;
   }
 };
 
@@ -5297,13 +5299,13 @@ public:
 
   ~CommandObjectProcessGDBRemotePacketSend() override = default;
 
-  bool DoExecute(Args &command, CommandReturnObject &result) override {
+  void DoExecute(Args &command, CommandReturnObject &result) override {
     const size_t argc = command.GetArgumentCount();
     if (argc == 0) {
       result.AppendErrorWithFormat(
           "'%s' takes a one or more packet content arguments",
           m_cmd_name.c_str());
-      return false;
+      return;
     }
 
     ProcessGDBRemote *process =
@@ -5329,7 +5331,6 @@ public:
           output_strm.Printf("response: %s\n", response.GetStringRef().data());
       }
     }
-    return true;
   }
 };
 
@@ -5346,12 +5347,12 @@ public:
 
   ~CommandObjectProcessGDBRemotePacketMonitor() override = default;
 
-  bool DoExecute(llvm::StringRef command,
+  void DoExecute(llvm::StringRef command,
                  CommandReturnObject &result) override {
     if (command.empty()) {
       result.AppendErrorWithFormat("'%s' takes a command string argument",
                                    m_cmd_name.c_str());
-      return false;
+      return;
     }
 
     ProcessGDBRemote *process =
@@ -5375,7 +5376,6 @@ public:
       else
         output_strm.Printf("response: %s\n", response.GetStringRef().data());
     }
-    return true;
   }
 };
 

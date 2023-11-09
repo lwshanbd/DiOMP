@@ -1593,7 +1593,6 @@ bool Sema::isUsableModule(const Module *M) {
   //   The global module fragment can be used to provide declarations that are
   //   attached to the global module and usable within the module unit.
   if (M == TheGlobalModuleFragment || M == TheImplicitGlobalModuleFragment ||
-      M == TheExportedImplicitGlobalModuleFragment ||
       // If M is the module we're parsing, it should be usable. This covers the
       // private module fragment. The private module fragment is usable only if
       // it is within the current module unit. And it must be the current
@@ -3911,7 +3910,7 @@ void Sema::ArgumentDependentLookup(DeclarationName Name, SourceLocation Loc,
             // exports are only valid in module purview and outside of any
             // PMF (although a PMF should not even be present in a module
             // with an import).
-            assert(FM && FM->isModulePurview() && !FM->isPrivateModule() &&
+            assert(FM && FM->isNamedModule() && !FM->isPrivateModule() &&
                    "bad export context");
             // .. are attached to a named module M, do not appear in the
             // translation unit containing the point of the lookup..
@@ -5699,7 +5698,7 @@ void Sema::diagnoseMissingImport(SourceLocation Loc, const NamedDecl *Decl,
 
 /// Get a "quoted.h" or <angled.h> include path to use in a diagnostic
 /// suggesting the addition of a #include of the specified file.
-static std::string getHeaderNameForHeader(Preprocessor &PP, const FileEntry *E,
+static std::string getHeaderNameForHeader(Preprocessor &PP, FileEntryRef E,
                                           llvm::StringRef IncludingFile) {
   bool IsAngled = false;
   auto Path = PP.getHeaderSearchInfo().suggestPathToFileForDiagnostics(
@@ -5732,11 +5731,12 @@ void Sema::diagnoseMissingImport(SourceLocation UseLoc, const NamedDecl *Decl,
 
   // Try to find a suitable header-name to #include.
   std::string HeaderName;
-  if (const FileEntry *Header =
+  if (OptionalFileEntryRef Header =
           PP.getHeaderToIncludeForDiagnostics(UseLoc, DeclLoc)) {
     if (const FileEntry *FE =
             SourceMgr.getFileEntryForID(SourceMgr.getFileID(UseLoc)))
-      HeaderName = getHeaderNameForHeader(PP, Header, FE->tryGetRealPathName());
+      HeaderName =
+          getHeaderNameForHeader(PP, *Header, FE->tryGetRealPathName());
   }
 
   // If we have a #include we should suggest, or if all definition locations

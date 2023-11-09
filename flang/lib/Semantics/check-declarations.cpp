@@ -130,6 +130,7 @@ private:
   }
   bool IsResultOkToDiffer(const FunctionResult &);
   void CheckGlobalName(const Symbol &);
+  void CheckProcedureAssemblyName(const Symbol &symbol);
   void CheckExplicitSave(const Symbol &);
   void CheckBindC(const Symbol &);
   void CheckBindCFunctionResult(const Symbol &);
@@ -178,6 +179,9 @@ private:
   std::map<std::string, SymbolRef> globalNames_;
   // Collection of external procedures without global definitions
   std::map<std::string, SymbolRef> externalNames_;
+  // Collection of target dependent assembly names of external and BIND(C)
+  // procedures.
+  std::map<std::string, SymbolRef> procedureAssemblyNames_;
 };
 
 class DistinguishabilityHelper {
@@ -194,10 +198,10 @@ private:
   SemanticsContext &context_;
   struct ProcedureInfo {
     GenericKind kind;
-    const Symbol &symbol;
     const Procedure &procedure;
   };
-  std::map<SourceName, std::vector<ProcedureInfo>> nameToInfo_;
+  std::map<SourceName, std::map<const Symbol *, ProcedureInfo>>
+      nameToSpecifics_;
 };
 
 void CheckHelper::Check(const ParamValue &value, bool canBeAssumed) {
@@ -277,6 +281,7 @@ void CheckHelper::Check(const Symbol &symbol) {
     CheckContiguous(symbol);
   }
   CheckGlobalName(symbol);
+  CheckProcedureAssemblyName(symbol);
   if (symbol.attrs().test(Attr::ASYNCHRONOUS) &&
       !evaluate::IsVariable(symbol)) {
     messages_.Say(
@@ -419,11 +424,16 @@ void CheckHelper::Check(const Symbol &symbol) {
     }
     CheckBindCFunctionResult(symbol);
   }
-  if (symbol.owner().IsModule() && IsAutomatic(symbol)) {
-    messages_.Say(
-        "Automatic data object '%s' may not appear in the specification part"
-        " of a module"_err_en_US,
-        symbol.name());
+  if (IsAutomatic(symbol)) {
+    if (const Symbol * common{FindCommonBlockContaining(symbol)}) {
+      messages_.Say(
+          "Automatic data object '%s' may not appear in COMMON block /%s/"_err_en_US,
+          symbol.name(), common->name());
+    } else if (symbol.owner().IsModule()) {
+      messages_.Say(
+          "Automatic data object '%s' may not appear in a module"_err_en_US,
+          symbol.name());
+    }
   }
   if (IsProcedure(symbol) && !symbol.HasExplicitInterface()) {
     if (IsAllocatable(symbol)) {
@@ -1062,7 +1072,8 @@ void CheckHelper::CheckPointerInitialization(const Symbol &symbol) {
           SomeExpr lhs{evaluate::ProcedureDesignator{symbol}};
           SomeExpr rhs{evaluate::ProcedureDesignator{**proc->init()}};
           CheckPointerAssignment(context_, lhs, rhs,
-              GetProgramUnitOrBlockConstructContaining(symbol));
+              GetProgramUnitOrBlockConstructContaining(symbol),
+              /*isBoundsRemapping=*/false, /*isAssumedRank=*/false);
         }
       }
     }
@@ -1383,12 +1394,6 @@ void CheckHelper::CheckSubprogram(
     if (ClassifyProcedure(symbol) == ProcedureDefinitionClass::Internal) {
       messages_.Say(symbol.name(),
           "A device subprogram may not be an internal subprogram"_err_en_US);
-    } else if ((*cudaAttrs == common::CUDASubprogramAttrs::Device ||
-                   *cudaAttrs == common::CUDASubprogramAttrs::HostDevice) &&
-        (symbol.owner().kind() != Scope::Kind::Module ||
-            details.isInterface())) {
-      messages_.Say(symbol.name(),
-          "An ATTRIBUTES(DEVICE) subprogram must be a top-level module procedure"_err_en_US);
     }
   }
   if ((!details.cudaLaunchBounds().empty() ||
@@ -2052,7 +2057,7 @@ bool CheckHelper::CheckConflicting(const Symbol &symbol, Attr a1, Attr a2) {
 
 void CheckHelper::WarnMissingFinal(const Symbol &symbol) {
   const auto *object{symbol.detailsIf<ObjectEntityDetails>()};
-  if (!object ||
+  if (!object || object->IsAssumedRank() ||
       (!IsAutomaticallyDestroyed(symbol) &&
           symbol.owner().kind() != Scope::Kind::DerivedType)) {
     return;
@@ -2124,11 +2129,11 @@ void CheckHelper::CheckContiguous(const Symbol &symbol) {
           evaluate::IsAssumedRank(symbol))) {
   } else if (symbol.owner().IsDerivedType()) { // C752
     messages_.Say(
-        "CONTIGUOUS component '%s' must be an array with the POINTER attribute"_err_en_US,
+        "CONTIGUOUS component '%s' should be an array with the POINTER attribute"_port_en_US,
         symbol.name());
   } else {
     messages_.Say(
-        "CONTIGUOUS entity '%s' must be an array pointer, assumed-shape, or assumed-rank"_err_en_US,
+        "CONTIGUOUS entity '%s' should be an array pointer, assumed-shape, or assumed-rank"_port_en_US,
         symbol.name());
   }
 }
@@ -2384,6 +2389,10 @@ void CheckHelper::Check(const Scope &scope) {
     for (const auto &pair : scope) {
       Check(*pair.second);
     }
+    if (scope.IsSubmodule() && scope.symbol()) {
+      // Submodule names are not in their parent's scopes
+      Check(*scope.symbol());
+    }
     for (const auto &pair : scope.commonBlocks()) {
       CheckCommonBlock(*pair.second);
     }
@@ -2613,6 +2622,43 @@ void CheckHelper::CheckGlobalName(const Symbol &symbol) {
         context_.SetError(symbol);
         context_.SetError(other);
       }
+    }
+  }
+}
+
+void CheckHelper::CheckProcedureAssemblyName(const Symbol &symbol) {
+  if (!IsProcedure(symbol) || symbol != symbol.GetUltimate())
+    return;
+  const std::string *bindName{symbol.GetBindName()};
+  const bool hasExplicitBindingLabel{
+      symbol.GetIsExplicitBindName() && bindName};
+  if (hasExplicitBindingLabel || IsExternal(symbol)) {
+    const std::string assemblyName{hasExplicitBindingLabel
+            ? *bindName
+            : common::GetExternalAssemblyName(
+                  symbol.name().ToString(), context_.underscoring())};
+    auto pair{procedureAssemblyNames_.emplace(std::move(assemblyName), symbol)};
+    if (!pair.second) {
+      const Symbol &other{*pair.first->second};
+      const bool otherHasExplicitBindingLabel{
+          other.GetIsExplicitBindName() && other.GetBindName()};
+      if (otherHasExplicitBindingLabel != hasExplicitBindingLabel) {
+        // The BIND(C,NAME="...") binding label is the same as the name that
+        // will be used in LLVM IR for an external procedure declared without
+        // BIND(C) in the same file. While this is not forbidden by the
+        // standard, this name collision would lead to a crash when producing
+        // the IR.
+        if (auto *msg{messages_.Say(symbol.name(),
+                "%s procedure assembly name conflicts with %s procedure assembly name"_err_en_US,
+                hasExplicitBindingLabel ? "BIND(C)" : "Non BIND(C)",
+                hasExplicitBindingLabel ? "non BIND(C)" : "BIND(C)")}) {
+          msg->Attach(other.name(), "Conflicting declaration"_en_US);
+        }
+        context_.SetError(symbol);
+        context_.SetError(other);
+      }
+      // Otherwise, the global names also match and the conflict is analyzed
+      // by CheckGlobalName.
     }
   }
 }
@@ -3237,11 +3283,14 @@ void SubprogramMatchHelper::Check(
     Say(symbol1, symbol2,
         "Module subprogram '%s' and its corresponding interface body are not both BIND(C)"_err_en_US);
   }
-  if (proc1->functionResult && proc2->functionResult &&
-      *proc1->functionResult != *proc2->functionResult) {
-    Say(symbol1, symbol2,
-        "Return type of function '%s' does not match return type of"
-        " the corresponding interface body"_err_en_US);
+  if (proc1->functionResult && proc2->functionResult) {
+    std::string whyNot;
+    if (!proc1->functionResult->IsCompatibleWith(
+            *proc2->functionResult, &whyNot)) {
+      Say(symbol1, symbol2,
+          "Result of function '%s' is not compatible with the result of the corresponding interface body: %s"_err_en_US,
+          whyNot);
+    }
   }
   for (int i{0}; i < nargs1; ++i) {
     const Symbol *arg1{args1[i]};
@@ -3306,10 +3355,9 @@ void SubprogramMatchHelper::CheckDummyDataObject(const Symbol &symbol1,
     const DummyDataObject &obj2) {
   if (!CheckSameIntent(symbol1, symbol2, obj1.intent, obj2.intent)) {
   } else if (!CheckSameAttrs(symbol1, symbol2, obj1.attrs, obj2.attrs)) {
-  } else if (obj1.type.type() != obj2.type.type()) {
+  } else if (!obj1.type.type().IsEquivalentTo(obj2.type.type())) {
     Say(symbol1, symbol2,
-        "Dummy argument '%s' has type %s; the corresponding argument in the"
-        " interface body has type %s"_err_en_US,
+        "Dummy argument '%s' has type %s; the corresponding argument in the interface body has distinct type %s"_err_en_US,
         obj1.type.type().AsFortran(), obj2.type.type().AsFortran());
   } else if (!ShapesAreCompatible(obj1, obj2)) {
     Say(symbol1, symbol2,
@@ -3393,26 +3441,26 @@ evaluate::Shape SubprogramMatchHelper::FoldShape(const evaluate::Shape &shape) {
 }
 
 void DistinguishabilityHelper::Add(const Symbol &generic, GenericKind kind,
-    const Symbol &specific, const Procedure &procedure) {
-  if (!context_.HasError(specific)) {
-    nameToInfo_[generic.name()].emplace_back(
-        ProcedureInfo{kind, specific, procedure});
+    const Symbol &ultimateSpecific, const Procedure &procedure) {
+  if (!context_.HasError(ultimateSpecific)) {
+    nameToSpecifics_[generic.name()].emplace(
+        &ultimateSpecific, ProcedureInfo{kind, procedure});
   }
 }
 
 void DistinguishabilityHelper::Check(const Scope &scope) {
-  for (const auto &[name, info] : nameToInfo_) {
-    auto count{info.size()};
-    for (std::size_t i1{0}; i1 < count - 1; ++i1) {
-      const auto &[kind, symbol, proc]{info[i1]};
-      for (std::size_t i2{i1 + 1}; i2 < count; ++i2) {
+  for (const auto &[name, info] : nameToSpecifics_) {
+    for (auto iter1{info.begin()}; iter1 != info.end(); ++iter1) {
+      const auto &[ultimate, procInfo]{*iter1};
+      const auto &[kind, proc]{procInfo};
+      for (auto iter2{iter1}; ++iter2 != info.end();) {
         auto distinguishable{kind.IsName()
                 ? evaluate::characteristics::Distinguishable
                 : evaluate::characteristics::DistinguishableOpOrAssign};
         if (!distinguishable(
-                context_.languageFeatures(), proc, info[i2].procedure)) {
+                context_.languageFeatures(), proc, iter2->second.procedure)) {
           SayNotDistinguishable(GetTopLevelUnitContaining(scope), name, kind,
-              symbol, info[i2].symbol);
+              *ultimate, *iter2->first);
         }
       }
     }

@@ -165,8 +165,12 @@ public:
   static char ID;
 
   InferAddressSpaces()
-      : FunctionPass(ID), FlatAddrSpace(UninitializedAddressSpace) {}
-  InferAddressSpaces(unsigned AS) : FunctionPass(ID), FlatAddrSpace(AS) {}
+      : FunctionPass(ID), FlatAddrSpace(UninitializedAddressSpace) {
+    initializeInferAddressSpacesPass(*PassRegistry::getPassRegistry());
+  }
+  InferAddressSpaces(unsigned AS) : FunctionPass(ID), FlatAddrSpace(AS) {
+    initializeInferAddressSpacesPass(*PassRegistry::getPassRegistry());
+  }
 
   void getAnalysisUsage(AnalysisUsage &AU) const override {
     AU.setPreservesCFG();
@@ -519,6 +523,10 @@ InferAddressSpacesImpl::collectFlatAddressExpressions(Function &F) const {
     } else if (auto *I2P = dyn_cast<IntToPtrInst>(&I)) {
       if (isNoopPtrIntCastPair(cast<Operator>(I2P), *DL, TTI))
         PushPtrOperand(cast<Operator>(I2P->getOperand(0))->getOperand(0));
+    } else if (auto *RI = dyn_cast<ReturnInst>(&I)) {
+      if (auto *RV = RI->getReturnValue();
+          RV && RV->getType()->isPtrOrPtrVectorTy())
+        PushPtrOperand(RV);
     }
   }
 
