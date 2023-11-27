@@ -13,21 +13,33 @@
 #ifndef DIOMP_MEM_H
 #define DIOMP_MEM_H
 
-namespace diomp{
-  class MemoryManager {
-  public:
-    MemoryManager(size_t global_size, size_t local_size);
-    ~MemoryManager();
+#ifndef GASNET_PAR
+#define GASNET_PAR
+#endif
 
-    void* allocate(size_t size);
-    void free(void* ptr);
+#include <gasnet.h>
+#include <gasnetex.h>
+#include <gasnet_tools.h>
+
+#include "tools.h"
+
+
+namespace diomp{
+class MemoryManager {
+  public:
+    MemoryManager();
+    ~MemoryManager();
+    uintptr_t getSegmentSpace(int node);
+    void* getSegmentAddr(int node);
 
   private:
-    void* global_memory_;
-    void* local_memory_;
-    size_t global_size_;
-    size_t local_size_;
+    gasnet_seginfo_t *SegInfo = 0;
+    int NodesNum;
+    int NodeID;
+
+    
 };
 
-  
-}
+} // namespace diomp
+
+#endif

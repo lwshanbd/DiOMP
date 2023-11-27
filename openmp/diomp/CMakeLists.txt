@@ -1,15 +1,18 @@
 # CMakeLists.txt for diomp
 
 set(GASNET "$HOME/gasnet-install")
-set(GASNET_IBV_INCLUDE "/home/l1065028/gasnet-install/include/ibv-conduit/")
-set(GASNET_LIB "/home/l1065028/gasnet-install/gasnet-install/lib")
+set(GASNET_IBV_INCLUDE "${GASNET}/include/ibv-conduit/")
+set(GASNET_LIB "${GASNET}/lib")
+set(HWLOC_LIB "/lustre/software/hwloc/2.8.0/lib")
 
 include_directories(${GASNET_IBV_INCLUDE})
-link_directories(${GASNET_LIB} )
+link_directories(${GASNET_LIB} ${HWLOC_LIB})
+
 
 
 add_library(diomp SHARED
   src/diomp.cpp
+  src/diompmem.cpp
 )
 target_link_libraries(diomp hwloc ibverbs rt)
 
