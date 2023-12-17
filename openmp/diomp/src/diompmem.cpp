@@ -1,6 +1,8 @@
 #include "diompmem.h"
 
 namespace diomp{
+
+
 MemoryManager::MemoryManager(){
     NodesNum = gasnet_nodes();
     NodeID = gasnet_mynode();
