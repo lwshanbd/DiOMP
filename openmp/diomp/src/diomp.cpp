@@ -28,8 +28,7 @@ void diomp_init(int argc, char *argv[]) {
   gasnet_handlerentry_t handlers[1];
   handlers[0].index = 128;
   handlers[0].fnptr = (void (*)())my_gasnet_handler;
-  size_t page_size = GASNET_PAGESIZE;
-  size_t segsize = 10000000000;
+  size_t segsize = gasnet_getMaxGlobalSegmentSize();
 
   GASNET_Safe(gex_Segment_Attach(&diompSeg, diompTeam, segsize));
   MemManger = new diomp::MemoryManager();
