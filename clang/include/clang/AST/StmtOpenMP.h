@@ -2632,6 +2632,48 @@ public:
   }
 };
 
+/// This represents '#pragma omp initdiomp' directive.
+///
+/// \code
+/// #pragma omp initdiomp
+/// \endcode
+class OMPInitDiOMPDirective : public OMPExecutableDirective {
+  friend class ASTStmtReader;
+  friend class OMPExecutableDirective;
+  /// Build directive with the given start and end location.
+  ///
+  /// \param StartLoc Starting location of the directive kind.
+  /// \param EndLoc Ending location of the directive.
+  ///
+  OMPInitDiOMPDirective(SourceLocation StartLoc, SourceLocation EndLoc)
+      : OMPExecutableDirective(OMPInitDiOMPDirectiveClass,
+                               llvm::omp::OMPD_initdiomp, StartLoc, EndLoc) {}
+  /// Build an empty directive.
+  ///
+  explicit OMPInitDiOMPDirective()
+      : OMPExecutableDirective(OMPInitDiOMPDirectiveClass, llvm::omp::OMPD_initdiomp,
+                               SourceLocation(), SourceLocation()) {}
+
+public:
+  ///
+  /// \param C AST context.
+  /// \param StartLoc Starting location of the directive kind.
+  /// \param EndLoc Ending Location of the directive.
+  ///
+  static OMPInitDiOMPDirective *Create(const ASTContext &C, SourceLocation StartLoc,
+                                   SourceLocation EndLoc);
+
+  /// Creates an empty directive.
+  ///
+  /// \param C AST context.
+  ///
+  static OMPInitDiOMPDirective *CreateEmpty(const ASTContext &C, EmptyShell);
+
+  static bool classof(const Stmt *T) {
+    return T->getStmtClass() == OMPInitDiOMPDirectiveClass;
+  }
+};
+
 /// This represents '#pragma omp barrier' directive.
 ///
 /// \code

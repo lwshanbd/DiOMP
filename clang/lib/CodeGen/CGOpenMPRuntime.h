@@ -829,6 +829,9 @@ public:
   /// Emits code for a taskyield directive.
   virtual void emitTaskyieldCall(CodeGenFunction &CGF, SourceLocation Loc);
 
+  /// Emits code for a initdiomp directive.
+  virtual void emitInitDiOMPCall(CodeGenFunction &CGF, SourceLocation Loc);
+
   /// Emit __kmpc_error call for error directive
   /// extern void __kmpc_error(ident_t *loc, int severity, const char *message);
   virtual void emitErrorCall(CodeGenFunction &CGF, SourceLocation Loc, Expr *ME,

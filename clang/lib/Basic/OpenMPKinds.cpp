@@ -876,6 +876,7 @@ void clang::getOpenMPCaptureRegions(
   case OMPD_threadprivate:
   case OMPD_allocate:
   case OMPD_taskyield:
+  case OMPD_initdiomp:
   case OMPD_barrier:
   case OMPD_error:
   case OMPD_taskwait:

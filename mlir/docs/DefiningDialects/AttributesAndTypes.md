@@ -24,7 +24,7 @@ names to attribute values.
 Every SSA value, such as operation results or block arguments, in MLIR has a type
 defined by the type system. MLIR has an open type system with no fixed list of types,
 and there are no restrictions on the abstractions they represent. For example, take
-the following [Arithmetic AddI operation](../Dialects/ArithOps.md#arithaddi-mlirarithaddiop):
+the following [Arithmetic AddI operation](../Dialects/ArithOps.md#arithaddi-mlirarithaddiomp):
 
 ```mlir
   %result = arith.addi %lhs, %rhs : i64

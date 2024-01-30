@@ -1733,7 +1733,7 @@ Instruction *InstCombinerImpl::visitFPTrunc(FPTruncInst &FPT) {
         // For division, we use again use the bound from Figueroa's
         // dissertation.  I am entirely certain that this bound can be
         // tightened in the unbalanced operand case by an analysis based on
-        // the diophantine rational approximation bound, but the well-known
+        // the diomphantine rational approximation bound, but the well-known
         // condition used here is a good conservative first pass.
         // TODO: Tighten bound via rigorous analysis of the unbalanced case.
         if (OpWidth >= 2*DstWidth && DstWidth >= SrcWidth) {

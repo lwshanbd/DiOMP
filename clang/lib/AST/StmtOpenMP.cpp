@@ -548,6 +548,17 @@ OMPScopeDirective *OMPScopeDirective::CreateEmpty(const ASTContext &C,
                                                  /*HasAssociatedStmt=*/true);
 }
 
+OMPInitDiOMPDirective *OMPInitDiOMPDirective::Create(const ASTContext &C,
+                                                     SourceLocation StartLoc,
+                                                     SourceLocation EndLoc) {
+  return new (C) OMPInitDiOMPDirective(StartLoc, EndLoc);
+}
+
+OMPInitDiOMPDirective *OMPInitDiOMPDirective::CreateEmpty(const ASTContext &C,
+                                                          EmptyShell) {
+  return new (C) OMPInitDiOMPDirective();
+}
+
 OMPSingleDirective *OMPSingleDirective::Create(const ASTContext &C,
                                                SourceLocation StartLoc,
                                                SourceLocation EndLoc,

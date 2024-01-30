@@ -11988,6 +11988,9 @@ public:
                                         SourceLocation StartLoc,
                                         SourceLocation EndLoc,
                                         OpenMPDirectiveKind CancelRegion);
+  /// Called on well-formed '\#pragma omp initdiomp'.
+  StmtResult ActOnOpenMPInitDiOMPDirective(SourceLocation StartLoc,
+                                        SourceLocation EndLoc);                                 
   /// Called on well-formed '\#pragma omp taskloop' after parsing of the
   /// associated statement.
   StmtResult

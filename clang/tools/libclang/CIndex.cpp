@@ -5991,6 +5991,8 @@ CXString clang_getCursorKindSpelling(enum CXCursorKind Kind) {
     return cxstring::createRef("OMPTaskDirective");
   case CXCursor_OMPTaskyieldDirective:
     return cxstring::createRef("OMPTaskyieldDirective");
+  case CXCursor_OMPInitDiOMPDirective:
+    return cxstring::createRef("OMPInitDiOMPDirective");    
   case CXCursor_OMPBarrierDirective:
     return cxstring::createRef("OMPBarrierDirective");
   case CXCursor_OMPTaskwaitDirective:

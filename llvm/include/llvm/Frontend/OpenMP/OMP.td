@@ -588,6 +588,8 @@ def OMP_Critical : Directive<"critical"> {
   ];
 }
 def OMP_TaskYield : Directive<"taskyield"> {}
+// Directive for DiOMP
+def OMP_InitDiOMP : Directive<"initdiomp"> {}
 def OMP_Barrier : Directive<"barrier"> {}
 def OMP_Error : Directive<"error"> {
   let allowedClauses = [

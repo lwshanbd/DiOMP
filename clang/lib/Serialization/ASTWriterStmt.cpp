@@ -2558,6 +2558,12 @@ void ASTStmtWriter::VisitOMPTaskyieldDirective(OMPTaskyieldDirective *D) {
   Code = serialization::STMT_OMP_TASKYIELD_DIRECTIVE;
 }
 
+void ASTStmtWriter::VisitOMPInitDiOMPDirective(OMPInitDiOMPDirective *D) {
+  VisitStmt(D);
+  VisitOMPExecutableDirective(D);
+  Code = serialization::STMT_OMP_INITDIOMP_DIRECTIVE;
+}
+
 void ASTStmtWriter::VisitOMPBarrierDirective(OMPBarrierDirective *D) {
   VisitStmt(D);
   VisitOMPExecutableDirective(D);
