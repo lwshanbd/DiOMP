@@ -3079,6 +3079,9 @@ DEF_TRAVERSE_STMT(OMPTaskDirective,
 DEF_TRAVERSE_STMT(OMPTaskyieldDirective,
                   { TRY_TO(TraverseOMPExecutableDirective(S)); })
 
+DEF_TRAVERSE_STMT(OMPInitDiOMPDirective,
+                  { TRY_TO(TraverseOMPExecutableDirective(S)); })                  
+
 DEF_TRAVERSE_STMT(OMPBarrierDirective,
                   { TRY_TO(TraverseOMPExecutableDirective(S)); })
 

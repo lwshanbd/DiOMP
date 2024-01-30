@@ -788,6 +788,12 @@ void StmtPrinter::VisitOMPScopeDirective(OMPScopeDirective *Node) {
   PrintOMPExecutableDirective(Node);
 }
 
+void StmtPrinter::VisitOMPInitDiOMPDirective(OMPInitDiOMPDirective *Node) {
+  Indent() << "#pragma omp initdiomp";
+  PrintOMPExecutableDirective(Node);
+}
+
+
 void StmtPrinter::VisitOMPSingleDirective(OMPSingleDirective *Node) {
   Indent() << "#pragma omp single";
   PrintOMPExecutableDirective(Node);

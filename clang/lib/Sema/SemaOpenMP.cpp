@@ -6365,6 +6365,13 @@ StmtResult SemaOpenMP::ActOnOpenMPExecutableDirective(
            "No associated statement allowed for 'omp taskyield' directive");
     Res = ActOnOpenMPTaskyieldDirective(StartLoc, EndLoc);
     break;
+  case OMPD_initdiomp:
+    assert(ClausesWithImplicit.empty() &&
+           "No clauses are allowed for 'omp initdiomp' directive");
+    assert(AStmt == nullptr &&
+           "No associated statement allowed for 'omp initdiomp' directive");
+    Res = ActOnOpenMPInitDiOMPDirective(StartLoc, EndLoc);
+    break;
   case OMPD_error:
     assert(AStmt == nullptr &&
            "No associated statement allowed for 'omp error' directive");
@@ -10994,9 +11001,15 @@ StmtResult SemaOpenMP::ActOnOpenMPTaskyieldDirective(SourceLocation StartLoc,
   return OMPTaskyieldDirective::Create(getASTContext(), StartLoc, EndLoc);
 }
 
-StmtResult SemaOpenMP::ActOnOpenMPBarrierDirective(SourceLocation StartLoc,
-                                                   SourceLocation EndLoc) {
-  return OMPBarrierDirective::Create(getASTContext(), StartLoc, EndLoc);
+StmtResult Sema::ActOnOpenMPInitDiOMPDirective(SourceLocation StartLoc,
+                                               SourceLocation EndLoc) {
+  return OMPInitDiOMPDirective::Create(Context, StartLoc, EndLoc);
+}
+
+
+StmtResult Sema::ActOnOpenMPBarrierDirective(SourceLocation StartLoc,
+                                             SourceLocation EndLoc) {
+  return OMPBarrierDirective::Create(Context, StartLoc, EndLoc);
 }
 
 StmtResult SemaOpenMP::ActOnOpenMPErrorDirective(ArrayRef<OMPClause *> Clauses,

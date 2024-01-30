@@ -3829,6 +3829,7 @@ public:
   void EmitOMPParallelMasterDirective(const OMPParallelMasterDirective &S);
   void EmitOMPTaskDirective(const OMPTaskDirective &S);
   void EmitOMPTaskyieldDirective(const OMPTaskyieldDirective &S);
+  void EmitOMPInitDiOMPDirective(const OMPInitDiOMPDirective &S);
   void EmitOMPErrorDirective(const OMPErrorDirective &S);
   void EmitOMPBarrierDirective(const OMPBarrierDirective &S);
   void EmitOMPTaskwaitDirective(const OMPTaskwaitDirective &S);
