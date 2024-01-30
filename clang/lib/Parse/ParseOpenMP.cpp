@@ -2764,6 +2764,7 @@ StmtResult Parser::ParseOpenMPDeclarativeOrExecutableDirective(
   case OMPD_depobj:
   case OMPD_scan:
   case OMPD_taskyield:
+  case OMPD_initdiomp:
   case OMPD_error:
   case OMPD_barrier:
   case OMPD_taskwait:
@@ -2816,7 +2817,6 @@ StmtResult Parser::ParseOpenMPDeclarativeOrExecutableDirective(
   case OMPD_parallel_loop:
   case OMPD_target_parallel_loop:
   case OMPD_scope:
-  case OMPD_initdiomp:
   case OMPD_taskloop:
   case OMPD_taskloop_simd:
   case OMPD_master_taskloop:
