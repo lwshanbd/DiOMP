@@ -1507,6 +1507,7 @@ CanThrowResult Sema::canThrow(const Stmt *S) {
   case Stmt::OMPTaskLoopSimdDirectiveClass:
   case Stmt::OMPTaskwaitDirectiveClass:
   case Stmt::OMPTaskyieldDirectiveClass:
+  case Stmt::OMPInitDiOMPDirectiveClass:
   case Stmt::OMPErrorDirectiveClass:
   case Stmt::OMPTeamsDirectiveClass:
   case Stmt::OMPTeamsDistributeDirectiveClass:

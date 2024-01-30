@@ -2419,6 +2419,7 @@ Parser::DeclGroupPtrTy Parser::ParseOpenMPDeclarativeDirectiveWithExtDecl(
   case OMPD_target_parallel_for_simd:
   case OMPD_target_simd:
   case OMPD_scope:
+  case OMPD_initdiomp:
   case OMPD_teams_distribute:
   case OMPD_teams_distribute_simd:
   case OMPD_teams_distribute_parallel_for_simd:
@@ -2815,6 +2816,7 @@ StmtResult Parser::ParseOpenMPDeclarativeOrExecutableDirective(
   case OMPD_parallel_loop:
   case OMPD_target_parallel_loop:
   case OMPD_scope:
+  case OMPD_initdiomp:
   case OMPD_taskloop:
   case OMPD_taskloop_simd:
   case OMPD_master_taskloop:

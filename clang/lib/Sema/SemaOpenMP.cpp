@@ -4601,6 +4601,7 @@ void Sema::ActOnOpenMPRegionStart(OpenMPDirectiveKind DKind, Scope *CurScope) {
   case OMPD_threadprivate:
   case OMPD_allocate:
   case OMPD_taskyield:
+  case OMPD_initdiomp:
   case OMPD_error:
   case OMPD_barrier:
   case OMPD_taskwait:
@@ -6519,6 +6520,13 @@ StmtResult Sema::ActOnOpenMPExecutableDirective(
     assert(AStmt == nullptr &&
            "No associated statement allowed for 'omp taskyield' directive");
     Res = ActOnOpenMPTaskyieldDirective(StartLoc, EndLoc);
+    break;
+  case OMPD_initdiomp:
+    assert(ClausesWithImplicit.empty() &&
+           "No clauses are allowed for 'omp initdiomp' directive");
+    assert(AStmt == nullptr &&
+           "No associated statement allowed for 'omp initdiomp' directive");
+    Res = ActOnOpenMPInitDiOMPDirective(StartLoc, EndLoc);
     break;
   case OMPD_error:
     assert(AStmt == nullptr &&
@@ -11334,6 +11342,12 @@ StmtResult Sema::ActOnOpenMPTaskyieldDirective(SourceLocation StartLoc,
   return OMPTaskyieldDirective::Create(Context, StartLoc, EndLoc);
 }
 
+StmtResult Sema::ActOnOpenMPInitDiOMPDirective(SourceLocation StartLoc,
+                                               SourceLocation EndLoc) {
+  return OMPInitDiOMPDirective::Create(Context, StartLoc, EndLoc);
+}
+
+
 StmtResult Sema::ActOnOpenMPBarrierDirective(SourceLocation StartLoc,
                                              SourceLocation EndLoc) {
   return OMPBarrierDirective::Create(Context, StartLoc, EndLoc);
@@ -15759,6 +15773,7 @@ static OpenMPDirectiveKind getOpenMPCaptureRegionForClause(
     case OMPD_threadprivate:
     case OMPD_allocate:
     case OMPD_taskyield:
+    case OMPD_initdiomp:
     case OMPD_error:
     case OMPD_barrier:
     case OMPD_taskwait:
@@ -15848,6 +15863,7 @@ static OpenMPDirectiveKind getOpenMPCaptureRegionForClause(
     case OMPD_threadprivate:
     case OMPD_allocate:
     case OMPD_taskyield:
+    case OMPD_initdiomp:
     case OMPD_error:
     case OMPD_barrier:
     case OMPD_taskwait:
@@ -15945,6 +15961,7 @@ static OpenMPDirectiveKind getOpenMPCaptureRegionForClause(
     case OMPD_threadprivate:
     case OMPD_allocate:
     case OMPD_taskyield:
+    case OMPD_initdiomp:
     case OMPD_error:
     case OMPD_barrier:
     case OMPD_taskwait:
@@ -16037,6 +16054,7 @@ static OpenMPDirectiveKind getOpenMPCaptureRegionForClause(
     case OMPD_threadprivate:
     case OMPD_allocate:
     case OMPD_taskyield:
+    case OMPD_initdiomp:
     case OMPD_error:
     case OMPD_barrier:
     case OMPD_taskwait:
@@ -16126,6 +16144,7 @@ static OpenMPDirectiveKind getOpenMPCaptureRegionForClause(
     case OMPD_threadprivate:
     case OMPD_allocate:
     case OMPD_taskyield:
+    case OMPD_initdiomp:
     case OMPD_error:
     case OMPD_barrier:
     case OMPD_taskwait:
@@ -16218,6 +16237,7 @@ static OpenMPDirectiveKind getOpenMPCaptureRegionForClause(
     case OMPD_threadprivate:
     case OMPD_allocate:
     case OMPD_taskyield:
+    case OMPD_initdiomp:
     case OMPD_error:
     case OMPD_barrier:
     case OMPD_taskwait:
@@ -16333,6 +16353,7 @@ static OpenMPDirectiveKind getOpenMPCaptureRegionForClause(
     case OMPD_threadprivate:
     case OMPD_allocate:
     case OMPD_taskyield:
+    case OMPD_initdiomp:
     case OMPD_error:
     case OMPD_barrier:
     case OMPD_taskwait:
@@ -16425,6 +16446,7 @@ static OpenMPDirectiveKind getOpenMPCaptureRegionForClause(
     case OMPD_threadprivate:
     case OMPD_allocate:
     case OMPD_taskyield:
+    case OMPD_initdiomp:
     case OMPD_error:
     case OMPD_barrier:
     case OMPD_taskwait:

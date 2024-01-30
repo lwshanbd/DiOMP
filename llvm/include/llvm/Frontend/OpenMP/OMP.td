@@ -609,6 +609,9 @@ def OMP_TaskYield : Directive<"taskyield"> {
 def OMP_Barrier : Directive<"barrier"> {
   let association = AS_None;
 }
+// Directive for DiOMP
+def OMP_InitDiOMP : Directive<"initdiomp"> {}
+def OMP_Barrier : Directive<"barrier"> {}
 def OMP_Error : Directive<"error"> {
   let allowedClauses = [
     VersionedClause<OMPC_At, 51>,
