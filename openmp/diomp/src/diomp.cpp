@@ -20,9 +20,9 @@ void my_gasnet_handler(gasnet_token_t token, void *buf, size_t nbytes) {
   printf("XXXXX\n");
 }
 
-void diomp_init(int argc, char *argv[]) {
+void __init_diomp() {
 
-  gex_Client_Init(&diompClient, &diompEp, &diompTeam, "diomp", &argc, &argv, 0);
+  gex_Client_Init(&diompClient, &diompEp, &diompTeam, "diomp", nullptr, nullptr, 0);
   // Handler init
 
   gasnet_handlerentry_t handlers[1];

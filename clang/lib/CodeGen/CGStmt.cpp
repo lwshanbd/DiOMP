@@ -258,8 +258,8 @@ void CodeGenFunction::EmitStmt(const Stmt *S, ArrayRef<const Attr *> Attrs) {
     EmitOMPTaskyieldDirective(cast<OMPTaskyieldDirective>(*S));
     break;
   case Stmt::OMPInitDiOMPDirectiveClass:
-    llvm_unreachable("scope not supported with FE outlining");
-    //EmitOMPInitDiOMPDirective(cast<OMPInitDiOMPDirective>(*S));
+    //llvm_unreachable("scope not supported with FE outlining");
+    EmitOMPInitDiOMPDirective(cast<OMPInitDiOMPDirective>(*S));
     break;
   case Stmt::OMPErrorDirectiveClass:
     EmitOMPErrorDirective(cast<OMPErrorDirective>(*S));
