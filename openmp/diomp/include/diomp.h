@@ -20,7 +20,7 @@
 #include <gasnet_tools.h>
 #include <gasnetex.h>
 
-void diomp_init(int argc, char *argv[]);
+extern void __init_diomp();
 
 int omp_get_num_ranks();
 int omp_get_rank_num();
