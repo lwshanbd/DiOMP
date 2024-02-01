@@ -2110,12 +2110,8 @@ void CGOpenMPRuntime::emitInitDiOMPCall(CodeGenFunction &CGF,
     return;
   else {
     // Build call init_diomp
-    llvm::Value *Args[] = {
-        emitUpdateLocation(CGF, Loc), getThreadID(CGF, Loc),
-        llvm::ConstantInt::get(CGM.IntTy, /*V=*/0, /*isSigned=*/true)};
     CGF.EmitRuntimeCall(OMPBuilder.getOrCreateRuntimeFunction(
-                            CGM.getModule(), OMPRTL___init_diomp),
-                        Args);
+                            CGM.getModule(), OMPRTL___init_diomp));
   }
 
   if (auto *Region = dyn_cast_or_null<CGOpenMPRegionInfo>(CGF.CapturedStmtInfo))
