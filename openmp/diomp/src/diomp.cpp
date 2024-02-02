@@ -17,7 +17,7 @@
 diomp::MemoryManager *MemManger;
 
 void my_gasnet_handler(gasnet_token_t token, void *buf, size_t nbytes) {
-  printf("XXXXX\n");
+  //printf("XXXXX\n");
 }
 
 extern "C" void __init_diomp() {
