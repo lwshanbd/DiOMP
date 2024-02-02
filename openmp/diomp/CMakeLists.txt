@@ -1,9 +1,16 @@
 # CMakeLists.txt for diomp
 
-set(GASNET "/gpfs/projects/ChapmanGroup/bshan/gasnet-install")
-set(GASNET_IBV_INCLUDE "${GASNET}/include/ibv-conduit/")
-set(GASNET_LIB "${GASNET}/lib")
-set(HWLOC_LIB "/gpfs/software/hwloc/xeonmax/2.9.2/lib")
+IF(NOT GASNET_LIB)
+    MESSAGE(STATUS "GASNET_LIB is not set.")
+    set(GASNET_LIB "$HOME/gasnet-install")
+ENDIF()
+
+IF(NOT HWLOC_LIB)
+    MESSAGE(STATUS "HWLOC_LIB is not set.")
+    set(HWLOC_LIB "/lustre/software/hwloc/2.8.0/lib")
+ENDIF()
+
+set(GASNET_IBV_INCLUDE "${GASNET_LIB}/include/ibv-conduit/")
 
 include_directories(${GASNET_IBV_INCLUDE})
 link_directories(${GASNET_LIB} ${HWLOC_LIB})
