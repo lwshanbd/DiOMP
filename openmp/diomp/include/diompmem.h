@@ -27,7 +27,7 @@
 namespace diomp{
 class MemoryManager {
   public:
-    MemoryManager();
+    MemoryManager(gex_TM_t gexTeam);
     ~MemoryManager();
     uintptr_t getSegmentSpace(int node);
     void* getSegmentAddr(int node);
