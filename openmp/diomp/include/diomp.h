@@ -61,10 +61,10 @@ enum class omp_op : gex_OP_t {
   fetch_bit_xor = GEX_OP_FXOR,
 };
 
-static gex_TM_t diompTeam;
-gex_Client_t diompClient;
-gex_EP_t diompEp;
-gex_Segment_t diompSeg;
+extern gex_TM_t diompTeam;
+extern gex_Client_t diompClient;
+extern gex_EP_t diompEp;
+extern gex_Segment_t diompSeg;
 
 void omp_get(void *dst, gasnet_node_t node, void *src, size_t nbytes);
 void omp_put(gasnet_node_t node, void *dst, void *src, size_t nbytes);
