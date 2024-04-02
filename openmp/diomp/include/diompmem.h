@@ -40,7 +40,7 @@ struct gex_Seginfo_t{
 struct MemoryBlock{
   void *Ptr;
   size_t Size;
-}
+};
 
 namespace diomp{
 

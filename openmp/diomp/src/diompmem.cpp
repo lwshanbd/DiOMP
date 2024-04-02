@@ -27,13 +27,13 @@ uintptr_t MemoryManager::getSegmentSpace(int Rank) {
 void *MemoryManager::getSegmentAddr(int Rank) { return SegInfo[Rank].SegStart; }
 
 void *MemoryManager::allocate(size_t Size) {
-  if (size > getAvailableSize()) {
+  if (Size > getAvailableSize()) {
     return nullptr;
   }
-  void *Ptr = SegRemain;
-  SegRemain = (char *)SegRemain + Size;
-  MemBlocks.push_back({ptr, Size});
-  return ptr;
+  void *Ptr = LocalSegRemain;
+  LocalSegRemain = (char *)LocalSegRemain + Size;
+  MemBlocks.push_back({Ptr, Size});
+  return Ptr;
 }
 
 size_t MemoryManager::getAvailableSize() const {
@@ -60,7 +60,7 @@ bool MemoryManager::validGlobalAddr(void *Ptr, int Rank){
   }
 
   size_t Offset = (char *)Ptr - (char *)SegInfo[Rank].SegStart;
-  if (Ptr < 0 || Offset > SegInfo[Rank].SegSize)
+  if (Offset < 0 || Offset > SegInfo[Rank].SegSize)
     return false;
   return true;
 }
@@ -68,7 +68,7 @@ bool MemoryManager::validGlobalAddr(void *Ptr, int Rank){
 void *MemoryManager::syncGlobalfromLocalAddr(void *Ptr, int Rank){
   size_t offset = getOffset(Ptr);
   void *GlobalPtr = SegInfo[Rank].SegStart;
-  if(!validGlobalAddr(GlobalPtr)){
+  if(!validGlobalAddr(GlobalPtr, Rank)){
     return nullptr;
   }
   return GlobalPtr;
