@@ -9,7 +9,7 @@ MemoryManager::MemoryManager(gex_TM_t gexTeam) {
   for (int r = 0; r < NodesNum; r++) {
     void *segment_base = 0;
     size_t segment_size = 0;
-    gex_Event_Wait(gex_EP_QueryBoundSegmentNB(diompTeam, NodeID, &segment_base,
+    gex_Event_Wait(gex_EP_QueryBoundSegmentNB(diompTeam, r, &segment_base,
                                               nullptr, &segment_size, 0));
     SegInfo[r].SegStart = segment_base;
     SegInfo[r].SegSize = segment_size;
