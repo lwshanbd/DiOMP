@@ -1107,6 +1107,7 @@ extern omp_allocator_handle_t const omp_thread_mem_alloc;
 extern omp_allocator_handle_t const llvm_omp_target_host_mem_alloc;
 extern omp_allocator_handle_t const llvm_omp_target_shared_mem_alloc;
 extern omp_allocator_handle_t const llvm_omp_target_device_mem_alloc;
+extern omp_allocator_handle_t const llvm_omp_distributed_mem_alloc;
 extern omp_allocator_handle_t const kmp_max_mem_alloc;
 extern omp_allocator_handle_t __kmp_def_allocator;
 
@@ -1158,6 +1159,7 @@ extern void ___kmpc_free(int gtid, void *ptr, omp_allocator_handle_t al);
 extern void __kmp_init_memkind();
 extern void __kmp_fini_memkind();
 extern void __kmp_init_target_mem();
+extern void __kmp_init_distributed_mem();
 
 /* ------------------------------------------------------------------------ */
 

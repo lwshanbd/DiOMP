@@ -324,6 +324,8 @@ omp_allocator_handle_t const llvm_omp_target_shared_mem_alloc =
     (omp_allocator_handle_t const)101;
 omp_allocator_handle_t const llvm_omp_target_device_mem_alloc =
     (omp_allocator_handle_t const)102;
+omp_allocator_handle_t const llvm_omp_distributed_mem_alloc =
+    (omp_allocator_handle_t const)200;
 omp_allocator_handle_t const kmp_max_mem_alloc =
     (omp_allocator_handle_t const)1024;
 omp_allocator_handle_t __kmp_def_allocator = omp_default_mem_alloc;

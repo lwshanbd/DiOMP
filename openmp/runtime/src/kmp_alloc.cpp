@@ -1242,6 +1242,9 @@ static void **mk_hbw_preferred_hugetlb;
 static void **mk_dax_kmem;
 static void **mk_dax_kmem_all;
 static void **mk_dax_kmem_preferred;
+// distributed alloc
+static void *(*kmp_distributed_alloc)(size_t size);
+// target alloc related functions
 static void *(*kmp_target_alloc_host)(size_t size, int device);
 static void *(*kmp_target_alloc_shared)(size_t size, int device);
 static void *(*kmp_target_alloc_device)(size_t size, int device);
@@ -1374,6 +1377,10 @@ void __kmp_init_target_mem() {
   // lock/pin and unlock/unpin target calls
   *(void **)(&kmp_target_lock_mem) = KMP_DLSYM("llvm_omp_target_lock_mem");
   *(void **)(&kmp_target_unlock_mem) = KMP_DLSYM("llvm_omp_target_unlock_mem");
+}
+
+void __kmp_init_distributed_mem() {
+  *(void **)(&kmp_distributed_alloc) = KMP_DLSYM("llvm_omp_distributed_alloc");
 }
 
 omp_allocator_handle_t __kmpc_init_allocator(int gtid, omp_memspace_handle_t ms,
@@ -1550,6 +1557,9 @@ void *__kmp_alloc(int gtid, size_t algn, size_t size,
   KMP_DEBUG_ASSERT(__kmp_init_serial);
   if (size == 0)
     return NULL;
+  if (allocator == llvm_omp_distributed_mem_alloc) {
+    kmp_distributed_alloc(size);
+  }
   if (allocator == omp_null_allocator)
     allocator = __kmp_threads[gtid]->th.th_def_allocator;
   kmp_int32 default_device =
