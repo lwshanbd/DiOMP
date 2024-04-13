@@ -82,7 +82,7 @@ void omp_bcast(void *data, size_t nbytes, gasnet_node_t node);
 // Experimental. Only for benchmark
 void omp_allreduce(void *src, void *dst, size_t count, int op);
 
-void* omp_ralloc(size_t Size);
+void* llvm_omp_distributed_alloc(size_t Size);
 
 #ifdef __cplusplus
 }

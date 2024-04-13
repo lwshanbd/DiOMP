@@ -63,7 +63,7 @@ class MemoryManager {
     size_t getSegmentSpace(int Rank);
     void *getSegmentAddr(int Rank);
 
-    void *allocate(size_t Size);
+    void *globalAlloc(size_t Size);
 
     size_t getAvailableSize() const;
     size_t getOffset(void *Ptr); // Compute ptr on local memory
