@@ -1,4 +1,5 @@
 #include "diompmem.h"
+#include <cstddef>
 
 namespace diomp {
 
@@ -26,7 +27,7 @@ uintptr_t MemoryManager::getSegmentSpace(int Rank) {
 
 void *MemoryManager::getSegmentAddr(int Rank) { return SegInfo[Rank].SegStart; }
 
-void *MemoryManager::allocate(size_t Size) {
+void *MemoryManager::globalAlloc(size_t Size) {
   if (Size > getAvailableSize()) {
     return nullptr;
   }
@@ -73,7 +74,6 @@ void *MemoryManager::syncGlobalfromLocalAddr(void *Ptr, int Rank){
   }
   return GlobalPtr;
 }
-
 
 
 } // namespace diomp

@@ -77,4 +77,6 @@ void omp_allreduce(void *src, void *dst, size_t count, int op) {
                                         NULL, NULL, 0));
 }
 
-void *omp_ralloc(size_t Size) { return MemManger->allocate(Size); }
+void *llvm_omp_distributed_alloc(size_t Size) {
+  return MemManger->globalAlloc(Size);
+}
