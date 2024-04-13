@@ -53,6 +53,19 @@ typedef enum omp_op {
   omp_op_fetch_bit_xor = GEX_OP_FXOR,
 } omp_op_t;
 
+typedef enum omp_dt {
+  // Integer types:
+  omp_int32  = GEX_DT_I32;
+  omp_uint32 = GEX_DT_U32;
+  omp_int64  = GEX_DT_I64;
+  omp_uint64 = GEX_DT_U64;
+
+  // Floating-point types:
+  omp_float  = GEX_DT_FLT;
+  omp_double = GEX_DT_DBL;
+
+} omp_dt_t;
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -77,10 +90,10 @@ void diomp_barrier();
 void diomp_waitRMA();
 
 
-void omp_bcast(void *data, size_t nbytes, gasnet_node_t node);
+void omp_bcast(void *data, size_t nbytes, int node);
 
 // Experimental. Only for benchmark
-void omp_allreduce(void *src, void *dst, size_t count, int op);
+void omp_allreduce(void *src, void *dst, omp_dt dt, size_t count, omp_op op);
 
 void* llvm_omp_distributed_alloc(size_t Size);
 

@@ -67,13 +67,13 @@ uintptr_t omp_get_length_space(int node) {
   return MemManger->getSegmentSpace(node);
 }
 
-void omp_bcast(void *data, size_t nbytes, gasnet_node_t node) {
+void omp_bcast(void *data, size_t nbytes, int node) {
   gex_Event_Wait(gex_Coll_BroadcastNB(diompTeam, node, data, data, nbytes, 0));
 }
 
-void omp_allreduce(void *src, void *dst, size_t count, int op) {
-  gex_Event_Wait(gex_Coll_ReduceToAllNB(diompTeam, dst, src, GEX_DT_I32,
-                                        sizeof(GEX_DT_I32), count, (gex_OP_t)op,
+void omp_allreduce(void *src, void *dst, size_t count, omp_dt dt, omp_op op) {
+  gex_Event_Wait(gex_Coll_ReduceToAllNB(diompTeam, dst, src, dt,
+                                        sizeof(dt), count, op,
                                         NULL, NULL, 0));
 }
 
