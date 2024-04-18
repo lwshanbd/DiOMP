@@ -66,6 +66,12 @@ typedef enum omp_dt {
 
 } omp_dt_t;
 
+typedef enum omp_event {
+  omp_ev_get = GEX_EC_GET,
+  omp_ev_put = GEX_EC_PUT,
+  omp_ev_am  = GEX_EC_AM, 
+} omp_event_t;
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -80,14 +86,16 @@ void __init_diomp();
 int omp_get_num_ranks();
 int omp_get_rank_num();
 
-void omp_get(void *dst, gasnet_node_t node, void *src, size_t nbytes);
-void omp_put(gasnet_node_t node, void *dst, void *src, size_t nbytes);
+void omp_get(void *dst, int node, void *src, size_t nbytes);
+void omp_put(int node, void *dst, void *src, size_t nbytes);
 
 void *omp_get_space(int node);
 uintptr_t omp_get_length_space(int node);
 
 void diomp_barrier();
-void diomp_waitRMA();
+
+void diomp_waitALLRMA();
+void diomp_waitRMA(omp_event ev);
 
 
 void omp_bcast(void *data, size_t nbytes, int node);

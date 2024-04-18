@@ -44,13 +44,13 @@ int omp_get_num_ranks() { return gex_TM_QuerySize(diompTeam); }
 
 int omp_get_rank_num() { return gex_TM_QueryRank(diompTeam); }
 
-void omp_get(void *dest, gasnet_node_t node, void *src, size_t nbytes) {
+void omp_get(void *dest, int node, void *src, size_t nbytes) {
   if (gex_RMA_GetNBI(diompTeam, dest, node, src, nbytes, 0) != 0) {
     printf("Boom!\n");
   }
 }
 
-void omp_put(gasnet_node_t node, void *dest, void *src, size_t nbytes) {
+void omp_put(int node, void *dest, void *src, size_t nbytes) {
   if (gex_RMA_PutNBI(diompTeam, node, dest, src, nbytes, GEX_EVENT_DEFER, 0) !=
       0) {
     printf("Boom!\n");
@@ -59,7 +59,11 @@ void omp_put(gasnet_node_t node, void *dest, void *src, size_t nbytes) {
 
 void diomp_barrier() { gex_Event_Wait(gex_Coll_BarrierNB(diompTeam, 0)); }
 
-void diomp_waitRMA() { gex_NBI_Wait(GEX_EC_PUT, 0); }
+void diomp_waitALLRMA() { gex_NBI_Wait(GEX_EC_ALL, 0); }
+
+void diomp_waitRMA(omp_event ev){
+  gex_NBI_Wait(ev, 0);
+}
 
 void *omp_get_space(int node) { return MemManger->getSegmentAddr(node); }
 
