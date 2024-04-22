@@ -10,11 +10,13 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "diomp.h"
+#include "diomp.hpp"
 #include "diompmem.h"
 #include "tools.h"
+
 #include <cstddef>
 #include <cstdio>
+#include <stdexcept>
 
 diomp::MemoryManager *MemManger;
 
@@ -38,15 +40,17 @@ int omp_get_num_ranks() { return gex_TM_QuerySize(diompTeam); }
 int omp_get_rank_num() { return gex_TM_QueryRank(diompTeam); }
 
 void omp_get(void *dest, int node, void *src, size_t nbytes) {
-  if (gex_RMA_GetNBI(diompTeam, dest, node, src, nbytes, 0) != 0) {
-    printf("Boom!\n");
+  auto Error = gex_RMA_GetNBI(diompTeam, dest, node, src, nbytes, 0);
+  if (Error != 0) {
+    THROW_ERROR("OpenMP GET Error! Error code is %d", Error);
   }
 }
 
 void omp_put(int node, void *dest, void *src, size_t nbytes) {
-  if (gex_RMA_PutNBI(diompTeam, node, dest, src, nbytes, GEX_EVENT_DEFER, 0) !=
-      0) {
-    printf("Boom!\n");
+  auto Error =
+      gex_RMA_PutNBI(diompTeam, node, dest, src, nbytes, GEX_EVENT_DEFER, 0);
+  if (Error != 0) {
+    THROW_ERROR("OpenMP PUT Error! Error code is %d", Error);
   }
 }
 
@@ -54,9 +58,7 @@ void diomp_barrier() { gex_Event_Wait(gex_Coll_BarrierNB(diompTeam, 0)); }
 
 void diomp_waitALLRMA() { gex_NBI_Wait(GEX_EC_ALL, 0); }
 
-void diomp_waitRMA(omp_event ev){
-  gex_NBI_Wait(ev, 0);
-}
+void diomp_waitRMA(omp_event ev) { gex_NBI_Wait(ev, 0); }
 
 void *omp_get_space(int node) { return MemManger->getSegmentAddr(node); }
 
@@ -69,11 +71,15 @@ void omp_bcast(void *data, size_t nbytes, int node) {
 }
 
 void omp_allreduce(void *src, void *dst, size_t count, omp_dt dt, omp_op op) {
-  gex_Event_Wait(gex_Coll_ReduceToAllNB(diompTeam, dst, src, dt,
-                                        sizeof(dt), count, op,
-                                        NULL, NULL, 0));
+  gex_Event_Wait(gex_Coll_ReduceToAllNB(diompTeam, dst, src, dt, sizeof(dt),
+                                        count, op, NULL, NULL, 0));
 }
 
 void *llvm_omp_distributed_alloc(size_t Size) {
   return MemManger->globalAlloc(Size);
+}
+
+template <typename T>
+void *diomp_alloc(size_t Size) {
+  return MemManger->globalAlloc(Size * sizeof(T));
 }

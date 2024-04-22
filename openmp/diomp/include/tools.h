@@ -1,6 +1,17 @@
 #ifndef TOOLS_H
 #define TOOLS_H
 
+#include <stdio.h>
+#include <stdlib.h>
+
+#define THROW_ERROR(format, ...) \
+    do { \
+        fprintf(stderr, "%s:%d: ", __FILE__, __LINE__); \
+        fprintf(stderr, format, ##__VA_ARGS__); \
+        fprintf(stderr, "\n"); \
+        exit(EXIT_FAILURE); \
+    } while (0)
+
 #define GASNET_Safe(fncall) do {                                     \
     int _retval;                                                     \
     if ((_retval = fncall) != GASNET_OK) {                           \
