@@ -18,10 +18,6 @@
 
 diomp::MemoryManager *MemManger;
 
-void my_gasnet_handler(gasnet_token_t token, void *buf, size_t nbytes) {
-  // Do Nothing
-}
-
 gex_TM_t diompTeam;
 gex_Client_t diompClient;
 gex_EP_t diompEp;
@@ -32,9 +28,6 @@ void __init_diomp() {
   gex_Client_Init(&diompClient, &diompEp, &diompTeam, "diomp", nullptr, nullptr,
                   0);
 
-  gasnet_handlerentry_t handlers[1];
-  handlers[0].index = 128;
-  handlers[0].fnptr = (void (*)())my_gasnet_handler;
   size_t segsize = gasnet_getMaxGlobalSegmentSize();
   GASNET_Safe(gex_Segment_Attach(&diompSeg, diompTeam, segsize));
   MemManger = new diomp::MemoryManager(diompTeam);
