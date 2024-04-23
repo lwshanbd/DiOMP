@@ -30,8 +30,8 @@ void __init_diomp() {
   gex_Client_Init(&diompClient, &diompEp, &diompTeam, "diomp", nullptr, nullptr,
                   0);
 
-  size_t segsize = gasnet_getMaxGlobalSegmentSize();
-  GASNET_Safe(gex_Segment_Attach(&diompSeg, diompTeam, segsize));
+  size_t SegSize = gasnet_getMaxGlobalSegmentSize();
+  GASNET_Safe(gex_Segment_Attach(&diompSeg, diompTeam, SegSize));
   MemManger = new diomp::MemoryManager(diompTeam);
 }
 
