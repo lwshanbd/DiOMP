@@ -7,11 +7,4 @@
 template <typename T>
 void* diomp_alloc(size_t Size);
 
-
-
-
-
-
-
-
 #endif //DIOMP_HPP

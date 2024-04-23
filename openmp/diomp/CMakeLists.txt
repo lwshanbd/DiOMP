@@ -21,7 +21,7 @@ add_library(diomp SHARED
   src/diomp.cpp
   src/diompmem.cpp
 )
-target_link_libraries(diomp hwloc ibverbs rt)
+target_link_libraries(diomp)
 
 target_include_directories(diomp
   PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include
@@ -29,6 +29,12 @@ target_include_directories(diomp
 
 install(TARGETS diomp LIBRARY DESTINATION "${OPENMP_INSTALL_LIBDIR}")
 install(FILES include/diomp.h include/diomp.hpp DESTINATION "${LIBOMP_HEADERS_INSTALL_PATH}")
+install(PROGRAMS src/diompCC.py
+  DESTINATION "${CMAKE_INSTALL_BINDIR}"
+  RENAME diompCC)
+  install(PROGRAMS src/diompcc.py
+  DESTINATION "${CMAKE_INSTALL_BINDIR}"
+  RENAME diompcc)  
 
 
 
