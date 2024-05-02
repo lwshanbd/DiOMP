@@ -1558,7 +1558,8 @@ void *__kmp_alloc(int gtid, size_t algn, size_t size,
   if (size == 0)
     return NULL;
   if (allocator == llvm_omp_distributed_mem_alloc) {
-    kmp_distributed_alloc(size);
+    ptr =kmp_distributed_alloc(size);
+    return ptr;
   }
   if (allocator == omp_null_allocator)
     allocator = __kmp_threads[gtid]->th.th_def_allocator;

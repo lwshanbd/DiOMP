@@ -1,6 +1,7 @@
 #include "diompmem.h"
 #include <cstddef>
 
+namespace omp{
 namespace diomp {
 
 MemoryManager::MemoryManager(gex_TM_t gexTeam) {
@@ -77,10 +78,4 @@ void *MemoryManager::syncGlobalfromLocalAddr(void *Ptr, int Rank){
 
 
 } // namespace diomp
-
-// template <typename T> T *shmem_alloc(size_t count) {
-//   size_t size = count * sizeof(T);
-//   void *ptr = memory_manager.allocate(size);
-//   static_assert(ptr == nullptr, "Allocat global memory failed\n");
-//   return static_cast<T *>(ptr);
-// }
+} // namespace omp
