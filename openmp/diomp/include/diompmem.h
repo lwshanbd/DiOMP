@@ -42,6 +42,7 @@ struct MemoryBlock{
   size_t Size;
 };
 
+namespace omp{
 namespace diomp{
 
 class MemoryManager {
@@ -77,5 +78,5 @@ class MemoryManager {
 };
 
 } // namespace diomp
-
-#endif
+} // namespace omp
+#endif // DIOMP_MEM_H

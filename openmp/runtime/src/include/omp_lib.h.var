@@ -224,6 +224,8 @@
       parameter(llvm_omp_target_shared_mem_alloc=101)
       integer(omp_allocator_handle_kind)llvm_omp_target_device_mem_alloc
       parameter(llvm_omp_target_device_mem_alloc=102)
+      integer(omp_allocator_handle_kind)llvm_omp_distributed_mem_alloc
+      parameter(llvm_omp_distributed_mem_alloc=200)
 
       integer(kind=omp_memspace_handle_kind)omp_default_mem_space
       parameter(omp_default_mem_space=0)

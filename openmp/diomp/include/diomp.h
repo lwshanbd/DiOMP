@@ -20,7 +20,8 @@
 #include <gasnet_tools.h>
 #include <gasnetex.h>
 
-
+namespace omp {
+namespace diomp {
 
 typedef enum omp_op {
   // accessors
@@ -109,4 +110,8 @@ void* llvm_omp_distributed_alloc(size_t Size);
 }
 #endif
 
-#endif
+
+} // namespace diomp
+} // namespace omp
+
+#endif //DIOMP_H

@@ -408,6 +408,7 @@
       llvm_omp_target_host_mem_alloc = 100,
       llvm_omp_target_shared_mem_alloc = 101,
       llvm_omp_target_device_mem_alloc = 102,
+      llvm_omp_distributed_mem_alloc = 200,
       KMP_ALLOCATOR_MAX_HANDLE = UINTPTR_MAX
     } omp_allocator_handle_t;
 #       if __cplusplus >= 201103
