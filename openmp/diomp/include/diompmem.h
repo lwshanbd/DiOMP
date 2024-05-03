@@ -26,10 +26,7 @@
 
 #include "tools.h"
 
-extern gex_TM_t diompTeam;
-extern gex_Client_t diompClient;
-extern gex_EP_t diompEp;
-extern gex_Segment_t diompSeg;
+
 
 struct gex_Seginfo_t{
   void *SegStart;
@@ -44,6 +41,11 @@ struct MemoryBlock{
 
 namespace omp{
 namespace diomp{
+
+extern gex_TM_t diompTeam;
+extern gex_Client_t diompClient;
+extern gex_EP_t diompEp;
+extern gex_Segment_t diompSeg;
 
 class MemoryManager {
   private:

@@ -26,7 +26,8 @@
   } while(0)
 
 
-
+#define AM_LOCK_REQ_IDX 0
+#define AM_LOCK_REL_IDX 1
 
 
 
