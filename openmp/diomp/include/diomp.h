@@ -20,8 +20,10 @@
 #include <gasnet_tools.h>
 #include <gasnetex.h>
 
-namespace omp {
-namespace diomp {
+
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 typedef enum omp_op {
   // accessors
@@ -73,9 +75,6 @@ typedef enum omp_event {
   omp_ev_am  = GEX_EC_AM, 
 } omp_event_t;
 
-#ifdef __cplusplus
-extern "C" {
-#endif
 
 extern gex_TM_t diompTeam;
 extern gex_Client_t diompClient;
@@ -87,31 +86,27 @@ void __init_diomp();
 int omp_get_num_ranks();
 int omp_get_rank_num();
 
+void *omp_get_space(int node);
+uintptr_t omp_get_length_space(int node);
+void* llvm_omp_distributed_alloc(size_t Size);
+
 void omp_get(void *dst, int node, void *src, size_t nbytes);
 void omp_put(int node, void *dst, void *src, size_t nbytes);
 
-void *omp_get_space(int node);
-uintptr_t omp_get_length_space(int node);
-
 void diomp_barrier();
-
 void diomp_waitALLRMA();
-void diomp_waitRMA(omp_event ev);
-
+void diomp_waitRMA(omp_event_t ev);
+void diomp_lock(int Rank);
+void diomp_unlock(int Rank);
 
 void omp_bcast(void *data, size_t nbytes, int node);
-
 // Experimental. Only for benchmark
-void omp_allreduce(void *src, void *dst, size_t count, omp_dt dt, omp_op op);
+void omp_allreduce(void *src, void *dst, size_t count, omp_dt_t dt, omp_op_t op);
 
-void* llvm_omp_distributed_alloc(size_t Size);
+
 
 #ifdef __cplusplus
 }
 #endif
-
-
-} // namespace diomp
-} // namespace omp
 
 #endif //DIOMP_H

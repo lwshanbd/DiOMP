@@ -1,7 +1,6 @@
 #include "diompmem.h"
 #include <cstddef>
 
-namespace omp{
 namespace diomp {
 
 MemoryManager::MemoryManager(gex_TM_t gexTeam) {
@@ -78,4 +77,3 @@ void *MemoryManager::syncGlobalfromLocalAddr(void *Ptr, int Rank){
 
 
 } // namespace diomp
-} // namespace omp
