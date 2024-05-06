@@ -16,36 +16,41 @@
 #include <cstdio>
 #include <stdexcept>
 
-namespace omp {
-namespace diomp {
 
-MemoryManager *MemManger;
+
+diomp::MemoryManager *MemManger;
 gex_TM_t diompTeam;
 gex_Client_t diompClient;
 gex_EP_t diompEp;
 gex_Segment_t diompSeg;
 int LockState = 0;
+int flag_lock = 0; // 0: initial, 1: locked, 2: occupied
 
 // AM Handlers for DiOMP
 
-void LockRequestAM(gex_Token_t Token, void *Buf, size_t NBytes,
-                   gex_AM_Arg_t Arg0) {
+void DoNothingAM(gex_Token_t Token, gex_AM_Arg_t Arg0) {
+  printf("DoNothingAM\n");
+  flag_lock = Arg0;
+  return;
+}
 
-  int SrcRank = (int)gex_Token_Info(Token, NULL, GEX_TI_SRCRANK);
+void LockRequestAM(gex_Token_t Token) {
   if (LockState == 0) {
     LockState = 1;
-    gex_AM_ReplyShort0(Token, Arg0, 0);
-  } else {
-    gex_AM_ReplyShort0(Token, -1, 0);
+    gex_AM_ReplyShort1(Token, AM_DO_NOTHING, 0, 1);
+  } else{
+    gex_AM_ReplyShort1(Token, AM_DO_NOTHING, 0, 2);
   }
 }
 
-void LockReleaseAM(gex_Token_t token, void *Buf, size_t NBytes) {
+void LockReleaseAM(gex_Token_t Token) {
   LockState = 0;
 }
 
 // AM Handler Table
-gex_AM_Entry_t AMTable[] = {{AM_LOCK_REQ_IDX, (gex_AM_Fn_t)LockRequestAM,
+gex_AM_Entry_t AMTable[] = {{AM_DO_NOTHING, (gex_AM_Fn_t)DoNothingAM,
+                            GEX_FLAG_AM_SHORT | GEX_FLAG_AM_REQREP, 0},
+                           {AM_LOCK_REQ_IDX, (gex_AM_Fn_t)LockRequestAM,
                             GEX_FLAG_AM_SHORT | GEX_FLAG_AM_REQUEST, 1},
                            {AM_LOCK_REL_IDX, (gex_AM_Fn_t)LockReleaseAM,
                             GEX_FLAG_AM_SHORT | GEX_FLAG_AM_REQUEST, 0}};
@@ -54,7 +59,7 @@ gex_AM_Entry_t AMTable[] = {{AM_LOCK_REQ_IDX, (gex_AM_Fn_t)LockRequestAM,
 void __init_diomp() {
   gex_Client_Init(&diompClient, &diompEp, &diompTeam, "diomp", nullptr, nullptr,
                   0);
-  size_t SegSize = gasnet_getMaxGlobalSegmentSize();
+  size_t SegSize = gasnet_getMaxGlobalSegmentSize()/2;
   GASNET_Safe(gex_Segment_Attach(&diompSeg, diompTeam, SegSize));
   gex_EP_RegisterHandlers(diompEp, AMTable, sizeof(AMTable)/sizeof(gex_AM_Entry_t));
   MemManger = new diomp::MemoryManager(diompTeam);
@@ -113,15 +118,14 @@ void diomp_barrier() { gex_Event_Wait(gex_Coll_BarrierNB(diompTeam, 0)); }
 void diomp_waitALLRMA() { gex_NBI_Wait(GEX_EC_ALL, 0); }
 
 // Wait for completion of a specific RMA operation
-void diomp_waitRMA(omp_event ev) { gex_NBI_Wait(ev, 0); }
+void diomp_waitRMA(omp_event_t ev) { gex_NBI_Wait(ev, 0); }
 
 void diomp_lock(int Rank){
   while (1) {
-    int Res = 0;
-    gex_AM_RequestShort1(diompTeam, Rank, AM_LOCK_REQ_IDX, 0, Res);
-    if (Res == 1) {
+    gex_AM_RequestShort0(diompTeam, Rank, AM_LOCK_REQ_IDX, 0);
+    GASNET_BLOCKUNTIL(flag_lock == 1 || flag_lock == 2);
+    if (flag_lock == 1)
       break;
-    }
   }
 }
 
@@ -138,10 +142,8 @@ void omp_bcast(void *data, size_t nbytes, int node) {
 }
 
 // All-reduce operation across all nodes
-void omp_allreduce(void *src, void *dst, size_t count, omp_dt dt, omp_op op) {
+void omp_allreduce(void *src, void *dst, size_t count, omp_dt_t dt, omp_op_t op) {
   gex_Event_Wait(gex_Coll_ReduceToAllNB(diompTeam, dst, src, dt, sizeof(dt),
                                         count, op, NULL, NULL, 0));
 }
 
-} // namespace diomp
-} // namespace omp
