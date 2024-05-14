@@ -81,7 +81,10 @@ extern gex_Client_t diompClient;
 extern gex_EP_t diompEp;
 extern gex_Segment_t diompSeg;
 
+extern size_t SegSize;
+
 void __init_diomp();
+void omp_set_distributed_size(size_t Size);
 
 int omp_get_num_ranks();
 int omp_get_rank_num();
