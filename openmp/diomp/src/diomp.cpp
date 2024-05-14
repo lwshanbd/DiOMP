@@ -12,8 +12,14 @@
 #include "diomp.hpp"
 #include "diompmem.h"
 #include "tools.h"
+
+#include <algorithm>
+#include <cctype>
+#include <cmath> 
 #include <cstddef>
 #include <cstdio>
+#include <cstdlib>
+#include <limits>
 #include <stdexcept>
 
 
@@ -23,11 +29,61 @@ gex_TM_t diompTeam;
 gex_Client_t diompClient;
 gex_EP_t diompEp;
 gex_Segment_t diompSeg;
+size_t SegSize = 0;
 int LockState = 0;
 int flag_lock = 0; // 0: initial, 1: locked, 2: occupied
 
-// AM Handlers for DiOMP
+size_t convertToBytes(const std::string& sizeStr) {
+    if (sizeStr.empty()) {
+        throw std::invalid_argument("Input string cannot be empty.");
+    }
 
+    size_t lastDigitIndex = sizeStr.find_last_of("0123456789");
+    if (lastDigitIndex == std::string::npos) {
+        throw std::invalid_argument("No numeric part found in the input string.");
+    }
+
+    std::string numberPart = sizeStr.substr(0, lastDigitIndex + 1);
+    std::string unitPart = sizeStr.substr(lastDigitIndex + 1);
+
+    size_t number = std::stoul(numberPart);
+
+    std::transform(unitPart.begin(), unitPart.end(), unitPart.begin(),
+                   [](unsigned char c) { return std::tolower(c); });
+
+    size_t bytes = 0;
+    if (unitPart == "kb") {
+        if (number > std::numeric_limits<size_t>::max() / 1024) {
+            throw std::overflow_error("Value too large to be represented in bytes as size_t.");
+        }
+        bytes = number * 1024;
+    } else if (unitPart == "mb") {
+        if (number > std::numeric_limits<size_t>::max() / (1024 * 1024)) {
+            throw std::overflow_error("Value too large to be represented in bytes as size_t.");
+        }
+        bytes = number * 1024 * 1024;
+    } else if (unitPart == "gb") {
+        if (number > std::numeric_limits<size_t>::max() / (1024 * 1024 * 1024)) {
+            throw std::overflow_error("Value too large to be represented in bytes as size_t.");
+        }
+        bytes = number * 1024 * 1024 * 1024;
+    } else {
+        bytes = number;
+    }
+    return bytes;
+}
+
+size_t getOMPDistributedSize() {
+    const char* envValue = std::getenv("OMP_DISTRIBUTED_MEM_SIZE");
+    if (envValue == nullptr) {
+        return 4 * 1024 * 1024 * 1024; // Default: 4GB
+    }
+    std::string valueStr(envValue);
+    size_t bytes = convertToBytes(valueStr);
+    return bytes;
+}
+
+// AM Handlers for DiOMP
 void DoNothingAM(gex_Token_t Token, gex_AM_Arg_t Arg0) {
   printf("DoNothingAM\n");
   flag_lock = Arg0;
@@ -59,10 +115,15 @@ gex_AM_Entry_t AMTable[] = {{AM_DO_NOTHING, (gex_AM_Fn_t)DoNothingAM,
 void __init_diomp() {
   gex_Client_Init(&diompClient, &diompEp, &diompTeam, "diomp", nullptr, nullptr,
                   0);
-  size_t SegSize = gasnet_getMaxGlobalSegmentSize()/2;
+  if(SegSize == 0)
+    SegSize = getOMPDistributedSize();
   GASNET_Safe(gex_Segment_Attach(&diompSeg, diompTeam, SegSize));
   gex_EP_RegisterHandlers(diompEp, AMTable, sizeof(AMTable)/sizeof(gex_AM_Entry_t));
   MemManger = new diomp::MemoryManager(diompTeam);
+}
+
+void omp_set_distributed_size(size_t Size) {
+  SegSize = Size;
 }
 
 // Get the total number of ranks
