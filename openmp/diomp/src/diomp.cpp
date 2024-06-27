@@ -21,6 +21,7 @@
 #include <cstdlib>
 #include <limits>
 #include <stdexcept>
+#include <vector>
 
 
 
@@ -31,6 +32,7 @@ gex_EP_t diompEp;
 gex_Segment_t diompSeg;
 size_t SegSize = 0;
 int LockState = 0;
+std::vector<int> LockQueues;
 int flag_lock = 0; // 0: initial, 1: locked, 2: occupied
 
 size_t convertToBytes(const std::string& sizeStr) {
@@ -85,22 +87,33 @@ size_t getOMPDistributedSize() {
 
 // AM Handlers for DiOMP
 void DoNothingAM(gex_Token_t Token, gex_AM_Arg_t Arg0) {
-  printf("DoNothingAM\n");
   flag_lock = Arg0;
   return;
 }
 
 void LockRequestAM(gex_Token_t Token) {
-  if (LockState == 0) {
+  gex_Token_Info_t info;
+  int sourceRank = 0;
+  gex_TI_t result = gex_Token_Info(Token, &info, GEX_TI_SRCRANK);
+  if (result & GEX_TI_SRCRANK) {
+    sourceRank = (int)info.gex_srcrank;
+  }
+
+  if (LockState == 0 && LockQueues.size() == 0) {
     LockState = 1;
     gex_AM_ReplyShort1(Token, AM_DO_NOTHING, 0, 1);
   } else{
-    gex_AM_ReplyShort1(Token, AM_DO_NOTHING, 0, 2);
+    LockQueues.push_back(sourceRank);
   }
 }
 
 void LockReleaseAM(gex_Token_t Token) {
   LockState = 0;
+  if (LockQueues.size() != 0){
+    gex_AM_RequestShort1(diompTeam, LockQueues[0], AM_DO_NOTHING, 0, 1);
+    LockQueues.erase(LockQueues.begin());
+    LockState = 1;
+  }
 }
 
 // AM Handler Table
@@ -119,6 +132,7 @@ void __init_diomp() {
     SegSize = getOMPDistributedSize();
   GASNET_Safe(gex_Segment_Attach(&diompSeg, diompTeam, SegSize));
   gex_EP_RegisterHandlers(diompEp, AMTable, sizeof(AMTable)/sizeof(gex_AM_Entry_t));
+  //LockQueues = new int[gex_TM_QuerySize(diompTeam)];
   MemManger = new diomp::MemoryManager(diompTeam);
 }
 
@@ -182,12 +196,8 @@ void diomp_waitALLRMA() { gex_NBI_Wait(GEX_EC_ALL, 0); }
 void diomp_waitRMA(omp_event_t ev) { gex_NBI_Wait(ev, 0); }
 
 void diomp_lock(int Rank){
-  while (1) {
-    gex_AM_RequestShort0(diompTeam, Rank, AM_LOCK_REQ_IDX, 0);
-    GASNET_BLOCKUNTIL(flag_lock == 1 || flag_lock == 2);
-    if (flag_lock == 1)
-      break;
-  }
+  gex_AM_RequestShort0(diompTeam, Rank, AM_LOCK_REQ_IDX, 0);
+  GASNET_BLOCKUNTIL(flag_lock == 1);
 }
 
 void diomp_unlock(int Rank) {
