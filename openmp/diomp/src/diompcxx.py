@@ -6,7 +6,7 @@ import re
 
 def main():
     if len(sys.argv) < 2:
-        print("Usage: diompCC <source_file> [-conduit=X] [additional_args]...")
+        print("Usage: diompcxx <source_file> [-conduit=X] [additional_args]...")
         return 1
     args = sys.argv[1:]
 
