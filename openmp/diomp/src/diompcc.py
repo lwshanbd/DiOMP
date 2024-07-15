@@ -6,7 +6,7 @@ import re
 
 def main():
     if len(sys.argv) < 2:
-        print("Usage: diompcc <source_file> [-conduit=X] [additional_args]...")
+        print("Usage: diompCC <source_file> [-conduit=X] [additional_args]...")
         return 1
     args = sys.argv[1:]
 
@@ -17,7 +17,7 @@ def main():
             args.remove(arg)
             break
 
-    base_compile_cmd = f"clang -ldiomp -lgasnet-{conduit}-par -libverbs -lrt -pthread -fopenmp -lmpi -lhwloc"
+    base_compile_cmd = f"clang++ -ldiomp -lgasnet-{conduit}-par -libverbs -lrt -pthread -fopenmp -lmpi -lhwloc"
     compile_cmd = f"{base_compile_cmd} {' '.join(args)}"
     subprocess.check_call(compile_cmd, shell=True)
 
