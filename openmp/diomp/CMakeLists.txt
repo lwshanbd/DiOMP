@@ -29,9 +29,9 @@ target_include_directories(diomp
 
 install(TARGETS diomp LIBRARY DESTINATION "${OPENMP_INSTALL_LIBDIR}")
 install(FILES include/diomp.h include/diomp.hpp DESTINATION "${LIBOMP_HEADERS_INSTALL_PATH}")
-install(PROGRAMS src/diompCC.py
+install(PROGRAMS src/diompcxx.py
   DESTINATION "${CMAKE_INSTALL_BINDIR}"
-  RENAME diompCC)
+  RENAME diompcxx)
   install(PROGRAMS src/diompcc.py
   DESTINATION "${CMAKE_INSTALL_BINDIR}"
   RENAME diompcc)  
