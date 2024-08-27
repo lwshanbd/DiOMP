@@ -500,6 +500,9 @@ public:
   /// Called on well-formed '\#pragma omp taskyield'.
   StmtResult ActOnOpenMPTaskyieldDirective(SourceLocation StartLoc,
                                            SourceLocation EndLoc);
+  /// Called on well-formed '\#pragma omp initdiomp'.
+  StmtResult ActOnOpenMPInitDiOMPDirective(SourceLocation StartLoc,
+                                           SourceLocation EndLoc);
   /// Called on well-formed '\#pragma omp error'.
   /// Error direcitive is allowed in both declared and excutable contexts.
   /// Adding InExContext to identify which context is called from.

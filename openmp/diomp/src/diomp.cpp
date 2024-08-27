@@ -23,8 +23,6 @@
 #include <stdexcept>
 #include <vector>
 
-
-
 diomp::MemoryManager *MemManger;
 gex_TM_t diompTeam;
 gex_Client_t diompClient;
@@ -78,7 +76,8 @@ size_t convertToBytes(const std::string& sizeStr) {
 size_t getOMPDistributedSize() {
     const char* envValue = std::getenv("OMP_DISTRIBUTED_MEM_SIZE");
     if (envValue == nullptr) {
-        return 4 * 1024 * 1024 * 1024; // Default: 4GB
+      size_t bytes = 4 * 1024 * 1024 * 1024; // Default: 4GB
+      return bytes;
     }
     std::string valueStr(envValue);
     size_t bytes = convertToBytes(valueStr);

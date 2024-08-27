@@ -72,8 +72,6 @@ class MemoryManager {
     bool validGlobalAddr(void *Ptr, int Rank);
     void *syncGlobalfromLocalAddr(void *Ptr, int Rank);
 
-    
-
 };
 
 } // namespace diomp

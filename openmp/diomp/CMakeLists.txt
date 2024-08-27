@@ -1,8 +1,8 @@
 # CMakeLists.txt for diomp
 
-IF(NOT GASNET_LIB)
+IF(NOT GASNET_ROOT)
     MESSAGE(STATUS "GASNET_LIB is not set.")
-    set(GASNET_LIB "$HOME/gasnet-install")
+    set(GASNET_ROOT "/home/l1065028/gasnet-cuda")
 ENDIF()
 
 IF(NOT HWLOC_LIB)
@@ -10,18 +10,19 @@ IF(NOT HWLOC_LIB)
     set(HWLOC_LIB "/lustre/software/hwloc/2.8.0/lib")
 ENDIF()
 
-set(GASNET_IBV_INCLUDE "${GASNET_LIB}/include/ibv-conduit/")
-
+set(GASNET_IBV_INCLUDE "${GASNET_ROOT}/include/ibv-conduit/" "/hrtc/apps/cuda/11.2.152/x86_64/lib")
+set(GASNET_LIB "${GASNET_ROOT}/lib")
+set(CUDA_HOME "/hrtc/apps/cuda/11.2.152/x86_64")
 include_directories(${GASNET_IBV_INCLUDE})
 link_directories(${GASNET_LIB} ${HWLOC_LIB})
-
 
 
 add_library(diomp SHARED
   src/diomp.cpp
   src/diompmem.cpp
 )
-target_link_libraries(diomp)
+target_link_libraries(diomp -lcuda -lcudart -lmpi
+-lrt -lgasnet-ibv-par -lhwloc -pthread -libverbs)
 
 target_include_directories(diomp
   PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include

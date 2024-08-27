@@ -1582,6 +1582,7 @@ bool OmpAttributeVisitor::Pre(
   case llvm::omp::Directive::OMPD_target_update:
   case llvm::omp::Directive::OMPD_taskwait:
   case llvm::omp::Directive::OMPD_taskyield:
+  case llvm::omp::Directive::OMPD_initdiomp:
     PushContext(standaloneDir.source, standaloneDir.v);
     break;
   default:

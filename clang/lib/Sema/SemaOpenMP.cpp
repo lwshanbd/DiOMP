@@ -11001,15 +11001,14 @@ StmtResult SemaOpenMP::ActOnOpenMPTaskyieldDirective(SourceLocation StartLoc,
   return OMPTaskyieldDirective::Create(getASTContext(), StartLoc, EndLoc);
 }
 
-StmtResult Sema::ActOnOpenMPInitDiOMPDirective(SourceLocation StartLoc,
+StmtResult SemaOpenMP::ActOnOpenMPInitDiOMPDirective(SourceLocation StartLoc,
                                                SourceLocation EndLoc) {
-  return OMPInitDiOMPDirective::Create(Context, StartLoc, EndLoc);
+  return OMPInitDiOMPDirective::Create(getASTContext(), StartLoc, EndLoc);
 }
 
-
-StmtResult Sema::ActOnOpenMPBarrierDirective(SourceLocation StartLoc,
+StmtResult SemaOpenMP::ActOnOpenMPBarrierDirective(SourceLocation StartLoc,
                                              SourceLocation EndLoc) {
-  return OMPBarrierDirective::Create(Context, StartLoc, EndLoc);
+  return OMPBarrierDirective::Create(getASTContext(), StartLoc, EndLoc);
 }
 
 StmtResult SemaOpenMP::ActOnOpenMPErrorDirective(ArrayRef<OMPClause *> Clauses,
