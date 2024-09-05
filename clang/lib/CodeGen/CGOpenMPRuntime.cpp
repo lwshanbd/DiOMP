@@ -2110,11 +2110,8 @@ void CGOpenMPRuntime::emitInitDiOMPCall(CodeGenFunction &CGF,
                                         SourceLocation Loc) {
   if (!CGF.HaveInsertPoint())
     return;
-  else {
-    // Build call init_diomp
-    CGF.EmitRuntimeCall(OMPBuilder.getOrCreateRuntimeFunction(
+  CGF.EmitRuntimeCall(OMPBuilder.getOrCreateRuntimeFunction(
                             CGM.getModule(), OMPRTL___init_diomp));
-  }
 
   if (auto *Region = dyn_cast_or_null<CGOpenMPRegionInfo>(CGF.CapturedStmtInfo))
     Region->emitUntiedSwitch(CGF);

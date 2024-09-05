@@ -46,10 +46,10 @@ namespace diomp{
 
 class MemoryManager {
   private:
-    gex_Seginfo_t *SegInfo = 0;
     int NodesNum;
     int NodeID;
     std::vector<MemoryBlock> MemBlocks;
+    std::vector<gex_Seginfo_t> SegInfo;
 
     // Local Segment Information
     void *LocalSegStart;
@@ -58,7 +58,7 @@ class MemoryManager {
 
   public:
     MemoryManager(gex_TM_t gexTeam);
-    ~MemoryManager();
+    ~MemoryManager(){};
 
     size_t getSegmentSpace(int Rank);
     void *getSegmentAddr(int Rank);

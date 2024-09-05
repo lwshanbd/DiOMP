@@ -20,6 +20,8 @@
 #include <gasnet_tools.h>
 #include <gasnetex.h>
 
+#include <atomic>
+
 
 #ifdef __cplusplus
 extern "C" {
@@ -81,7 +83,7 @@ extern gex_Client_t diompClient;
 extern gex_EP_t diompEp;
 extern gex_Segment_t diompSeg;
 
-extern size_t SegSize;
+extern std::atomic<size_t> SegSize;
 
 void __init_diomp();
 void omp_set_distributed_size(size_t Size);

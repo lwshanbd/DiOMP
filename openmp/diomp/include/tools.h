@@ -26,7 +26,7 @@
   } while(0)
 
 
-#define AM_DO_NOTHING 129
+#define AM_ACK_LOCK 129
 #define AM_LOCK_REQ_IDX 200
 #define AM_LOCK_REL_IDX 201
 

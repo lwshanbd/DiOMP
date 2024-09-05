@@ -2,7 +2,7 @@
 
 IF(NOT GASNET_ROOT)
     MESSAGE(STATUS "GASNET_LIB is not set.")
-    set(GASNET_ROOT "/home/l1065028/gasnet-cuda")
+    set(GASNET_ROOT "/home/l1065028/gasnet-arm-cuda")
 ENDIF()
 
 IF(NOT HWLOC_LIB)
