@@ -98,6 +98,15 @@ EXTERN int omp_get_initial_device(void) {
   return HostDevice;
 }
 
+EXTERN void omp_target_setup_diompallocator(int DeviceNum, void *Allocator, void *Dealloctor) {
+  TIMESCOPE();
+  OMPT_IF_BUILT(ReturnAddressSetterRAII RA(__builtin_return_address(0)));
+  auto DeviceOrErr = PM->getDevice(DeviceNum);
+  if (!DeviceOrErr)
+    FATAL_MESSAGE(DeviceNum, "%s", toString(DeviceOrErr.takeError()).c_str());
+  return DeviceOrErr->setupDiOMPAllocator(Allocator, Dealloctor);
+}
+
 EXTERN void *omp_target_alloc(size_t Size, int DeviceNum) {
   TIMESCOPE_WITH_DETAILS("dst_dev=" + std::to_string(DeviceNum) +
                          ";size=" + std::to_string(Size));

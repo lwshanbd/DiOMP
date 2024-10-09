@@ -520,6 +520,7 @@ kmp_set_warnings_off                        780
         omp_target_disassociate_ptr         889
         omp_target_memset                   3000
         omp_target_memset_async             3001
+        omp_target_setup_diompallocator     4001
     %endif
 
 kmp_set_disp_num_buffers                    890

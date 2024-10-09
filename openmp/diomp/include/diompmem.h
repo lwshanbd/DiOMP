@@ -13,17 +13,18 @@
 #ifndef DIOMP_MEM_H
 #define DIOMP_MEM_H
 
-#include <cstddef>
+
 #ifndef GASNET_PAR
 #define GASNET_PAR
 #endif
 
+#define OPENMP_ENABLE_DIOMP_DEVICE 1
 #include <gasnet.h>
 #include <gasnetex.h>
 #include <gasnet_tools.h>
-
+#include <gasnet_mk.h>
 #include <vector>
-
+#include <cstddef>
 #include "tools.h"
 
 extern gex_TM_t diompTeam;
@@ -46,10 +47,14 @@ namespace diomp{
 
 class MemoryManager {
   private:
-    int NodesNum;
-    int NodeID;
+    int RanksNum;
+    int MyRank;
     std::vector<MemoryBlock> MemBlocks;
     std::vector<gex_Seginfo_t> SegInfo;
+    // Device Segment Information
+    // DeviceSegInfo[NodeID][DeviceID]
+    std::vector<std::vector<gex_Seginfo_t>> DeviceSegInfo;
+    std::vector<gex_EP_t> DeviceEPs;
 
     // Local Segment Information
     void *LocalSegStart;
@@ -62,6 +67,7 @@ class MemoryManager {
 
     size_t getSegmentSpace(int Rank);
     void *getSegmentAddr(int Rank);
+    void *getDeviceSegmentAddr(int Rank, int DeviceID);
 
     void *globalAlloc(size_t Size);
 
@@ -70,7 +76,10 @@ class MemoryManager {
     size_t getOffset(void *Ptr, int Rank); // Compute ptr on remote memory
 
     bool validGlobalAddr(void *Ptr, int Rank);
-    void *syncGlobalfromLocalAddr(void *Ptr, int Rank);
+    void *convertRemotetoLocalAddr(void *Ptr, int Rank, int DeviceID);
+    void *convertRemotetoLocalAddr(void *Ptr, int Rank);
+
+
 
 };
 

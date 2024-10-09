@@ -4,9 +4,9 @@
 namespace diomp {
 
 MemoryManager::MemoryManager(gex_TM_t gexTeam) {
-  NodesNum = gex_TM_QuerySize(gexTeam);
-  NodeID = gex_TM_QueryRank(gexTeam);
-  SegInfo.resize(NodesNum);
+  RanksNum = gex_TM_QuerySize(gexTeam);
+  MyRank = gex_TM_QueryRank(gexTeam);
+  SegInfo.resize(RanksNum);
   for (auto &Seg : SegInfo) {
     void *SegBase = 0;
     size_t SegSize = 0;
@@ -16,12 +16,86 @@ MemoryManager::MemoryManager(gex_TM_t gexTeam) {
     Seg.SegSize = SegSize;
     Seg.SegRemain = SegBase;
   }
-  LocalSegStart = SegInfo[NodeID].SegStart;
-  LocalSegRemain = SegInfo[NodeID].SegRemain;
-  LocalSegSize = SegInfo[NodeID].SegSize;
+  LocalSegStart = SegInfo[MyRank].SegStart;
+  LocalSegRemain = SegInfo[MyRank].SegRemain;
+  LocalSegSize = SegInfo[MyRank].SegSize;
+
+#if OPENMP_ENABLE_DIOMP_DEVICE
+  int targetDevicesNum = omp_get_num_devices();
+  printf("Node %d: Number of Devices: %d\n", MyRank, targetDevicesNum);
+  DeviceEPs.resize(targetDevicesNum);
+  gex_MK_t Kind;
+  gex_MK_Create_args_t args;
+
+  args.gex_flags = 0;
+  args.gex_class = GEX_MK_CLASS_CUDA_UVA;
+  args.gex_args.gex_class_cuda_uva.gex_CUdevice = 0;
+  GASNET_Safe(gex_MK_Create(&Kind, diompClient, &args, 0));
+  // Create and bind local segments for each device
+  for (int DeviceID = 0; DeviceID < targetDevicesNum; DeviceID++) {
+    gex_EP_t DeviceEP;
+    void *DeviceSegAddr = omp_target_alloc(LocalSegSize, DeviceID);
+    gex_Segment_t DeviceSeg = GEX_SEGMENT_INVALID;
+    GASNET_Safe(gex_Segment_Create(&DeviceSeg, diompClient, DeviceSegAddr,
+                                   LocalSegSize, Kind, 0));
+    GASNET_Safe(
+        gex_EP_Create(&DeviceEP, diompClient, GEX_EP_CAPABILITY_RMA, 0));
+    GASNET_Safe(gex_EP_BindSegment(DeviceEP, DeviceSeg, 0));
+    GASNET_Safe(gex_EP_PublishBoundSegment(diompTeam, &DeviceEP, 1, 0));
+    DeviceEPs[DeviceID] = DeviceEP;
+    printf("Node %d: Device %d: Local Segment Start: %p\n", MyRank, DeviceID,
+           DeviceSegAddr);
+  }
+  printf("number of ranks %d\n", gex_TM_QuerySize(gexTeam));
+  DeviceSegInfo.resize(RanksNum,
+                       std::vector<gex_Seginfo_t>(omp_get_num_devices()));
+  for (int MyRank = 0; MyRank < RanksNum; MyRank++) {
+    for (int DeviceID = 0; DeviceID < targetDevicesNum; DeviceID++) {
+      DeviceSegInfo[MyRank][DeviceID].SegStart = nullptr;
+      DeviceSegInfo[MyRank][DeviceID].SegRemain = nullptr;
+      DeviceSegInfo[MyRank][DeviceID].SegSize = 0;
+    }
+  }
+
+#endif
 }
 
-uintptr_t MemoryManager::getSegmentSpace(int Rank) {
+void *MemoryManager::getDeviceSegmentAddr(int Rank, int DeviceID) {
+  if (DeviceSegInfo[Rank][DeviceID].SegStart == nullptr) {
+    gex_EP_Index_t TargetEPIdx = gex_EP_QueryIndex(DeviceEPs[DeviceID]);
+    gex_TM_t TargetTM = gex_TM_Pair(DeviceEPs[0], TargetEPIdx);
+    gex_Event_Wait(gex_EP_QueryBoundSegmentNB(
+        TargetTM, Rank, &DeviceSegInfo[Rank][DeviceID].SegStart, nullptr,
+        &DeviceSegInfo[Rank][DeviceID].SegSize, 0));
+    DeviceSegInfo[Rank][DeviceID].SegRemain =
+        DeviceSegInfo[Rank][DeviceID].SegStart;
+  }
+  return DeviceSegInfo[Rank][DeviceID].SegStart;
+}
+
+// Input:
+// Ptr: Remote address
+// Rank: Rank of the remote address
+// DeviceID: Device ID of the remote address
+// Output:
+// Local address of the remote address
+void *MemoryManager::convertRemotetoLocalAddr(void *Ptr, int Rank,
+                                              int DeviceID) {
+  uintptr_t RemoteBase =
+      reinterpret_cast<uintptr_t>(getDeviceSegmentAddr(Rank, DeviceID));
+  uintptr_t RemoteOffset = reinterpret_cast<uintptr_t>(Ptr) - RemoteBase;
+  return reinterpret_cast<void *>(reinterpret_cast<uintptr_t>(LocalSegStart) +
+                                  RemoteOffset);
+}
+
+void *MemoryManager::convertRemotetoLocalAddr(void *Ptr, int Rank) {
+  uintptr_t RemoteOffset = reinterpret_cast<uintptr_t>(Ptr) -
+                           reinterpret_cast<uintptr_t>(getSegmentAddr(Rank));
+  return reinterpret_cast<void *>(reinterpret_cast<uintptr_t>(LocalSegStart) +
+                                  RemoteOffset);
+}
+
+size_t MemoryManager::getSegmentSpace(int Rank) {
   return SegInfo[Rank].SegSize;
 }
 
@@ -40,36 +114,36 @@ void *MemoryManager::globalAlloc(size_t Size) {
 }
 
 size_t MemoryManager::getAvailableSize() const {
-  uintptr_t start = reinterpret_cast<uintptr_t>(LocalSegStart);
-  uintptr_t end = start + LocalSegSize;
+  uintptr_t Start = reinterpret_cast<uintptr_t>(LocalSegStart);
+  uintptr_t End = Start + LocalSegSize;
 
-  if (end < start) {
+  if (End < Start) {
     return 0; // Handle overflow
   }
 
-  return static_cast<size_t>(end - start);
+  return static_cast<size_t>(End - Start);
 }
 
 size_t MemoryManager::getOffset(void *Ptr) {
-  uintptr_t start = reinterpret_cast<uintptr_t>(LocalSegStart);
+  uintptr_t Start = reinterpret_cast<uintptr_t>(LocalSegStart);
   uintptr_t ptr = reinterpret_cast<uintptr_t>(Ptr);
 
-  if (ptr < start || ptr > start + LocalSegSize) {
+  if (ptr < Start || ptr > Start + LocalSegSize) {
     return static_cast<size_t>(-1);
   }
 
-  return static_cast<size_t>(ptr - start);
+  return static_cast<size_t>(ptr - Start);
 }
 
 size_t MemoryManager::getOffset(void *Ptr, int Rank) {
-  uintptr_t start = reinterpret_cast<uintptr_t>(SegInfo[Rank].SegStart);
+  uintptr_t Start = reinterpret_cast<uintptr_t>(SegInfo[Rank].SegStart);
   uintptr_t ptr = reinterpret_cast<uintptr_t>(Ptr);
 
-  if (ptr < start || ptr > start + SegInfo[Rank].SegSize) {
+  if (ptr < Start || ptr > Start + SegInfo[Rank].SegSize) {
     return static_cast<size_t>(-1);
   }
 
-  return static_cast<size_t>(ptr - start);
+  return static_cast<size_t>(ptr - Start);
 }
 
 bool MemoryManager::validGlobalAddr(void *Ptr, int Rank) {
@@ -80,14 +154,6 @@ bool MemoryManager::validGlobalAddr(void *Ptr, int Rank) {
   size_t Offset = reinterpret_cast<char *>(Ptr) -
                   reinterpret_cast<char *>(SegInfo[Rank].SegStart);
   return Offset <= SegInfo[Rank].SegSize;
-}
-
-void *MemoryManager::syncGlobalfromLocalAddr(void *Ptr, int Rank) {
-  void *GlobalPtr = SegInfo[Rank].SegStart;
-  if (!validGlobalAddr(GlobalPtr, Rank)) {
-    return nullptr;
-  }
-  return GlobalPtr;
 }
 
 } // namespace diomp

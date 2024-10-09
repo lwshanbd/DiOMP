@@ -1,0 +1,4 @@
+CompileFlags:
+    Add:
+        - "-I/home/l1065028/gasnet-arm-cuda/include/ibv-conduit/"
+        - "-I/home/l1065028/gasnet-arm-cuda/include/"

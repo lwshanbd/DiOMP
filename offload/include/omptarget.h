@@ -300,6 +300,8 @@ void *llvm_omp_target_alloc_device(size_t Size, int DeviceNum);
 void *llvm_omp_target_alloc_host(size_t Size, int DeviceNum);
 void *llvm_omp_target_alloc_shared(size_t Size, int DeviceNum);
 
+void omp_target_setup_diompallocator(int DeviceNum, void *Allocator, void *Dealloctor);
+
 /// Explicit target memory deallocators
 /// Using the llvm_ prefix until they become part of the OpenMP standard.
 void llvm_omp_target_free_device(void *DevicePtr, int DeviceNum);

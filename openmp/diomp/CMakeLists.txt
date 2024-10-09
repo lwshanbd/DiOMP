@@ -10,6 +10,11 @@ IF(NOT HWLOC_LIB)
     set(HWLOC_LIB "/lustre/software/hwloc/2.8.0/lib")
 ENDIF()
 
+IF(OPENMP_ENABLE_DIOMP_DEVICE)
+  add_definitions(-DOPENMP_ENABLE_DIOMP_DEVICE)
+  MESSAGE(STATUS "Building DiOMP device plugin")
+ENDIF()
+
 set(GASNET_IBV_INCLUDE "${GASNET_ROOT}/include/ibv-conduit/" "/hrtc/apps/cuda/11.2.152/x86_64/lib")
 set(GASNET_LIB "${GASNET_ROOT}/lib")
 set(CUDA_HOME "/hrtc/apps/cuda/11.2.152/x86_64")
@@ -21,11 +26,13 @@ add_library(diomp SHARED
   src/diomp.cpp
   src/diompmem.cpp
 )
-target_link_libraries(diomp -lcuda -lcudart -lmpi
+
+target_link_libraries(diomp -lcuda -lcudart -lmpi -fopenmp --offload-arch=sm_90
 -lrt -lgasnet-ibv-par -lhwloc -pthread -libverbs)
 
 target_include_directories(diomp
   PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include
+  ${CMAKE_CURRENT_SOURCE_DIR}/../../offload/include
 )
 
 install(TARGETS diomp LIBRARY DESTINATION "${OPENMP_INSTALL_LIBDIR}")

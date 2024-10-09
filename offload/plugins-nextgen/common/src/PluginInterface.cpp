@@ -1447,6 +1447,10 @@ Error GenericDeviceTy::initDeviceInfo(__tgt_device_info *DeviceInfo) {
   return initDeviceInfoImpl(DeviceInfo);
 }
 
+Error GenericDeviceTy::setupDiOMPAllocator(void *Allocator, void *Dealloctor) {
+  return setupDiOMPAllocatorImpl(Allocator, Dealloctor);
+}
+
 Error GenericDeviceTy::printInfo() {
   InfoQueueTy InfoQueue;
 
@@ -2088,6 +2092,17 @@ int32_t GenericPluginTy::get_function(__tgt_device_binary Binary,
 
   // Note that this is not the kernel's device address.
   *KernelPtr = &Kernel;
+  return OFFLOAD_SUCCESS;
+}
+
+int32_t GenericPluginTy::setup_diomp_allocator(int32_t DeviceId, void *Allocator, void *Dealloctor) {
+  auto Err = getDevice(DeviceId).setupDiOMPAllocator(Allocator, Dealloctor);
+  if (Err) {
+    REPORT("Failure to setup DiOMP allocator on device %d: %s\n", DeviceId,
+           toString(std::move(Err)).data());
+    return OFFLOAD_FAIL;
+  }
+
   return OFFLOAD_SUCCESS;
 }
 

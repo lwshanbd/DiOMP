@@ -26,6 +26,9 @@
 #include <stdexcept>
 #include <vector>
 
+#include <omp.h>
+#include "omptarget.h"
+
 std::unique_ptr<diomp::MemoryManager> MemManger;
 gex_TM_t diompTeam;
 gex_Client_t diompClient;
@@ -147,6 +150,33 @@ void __init_diomp() {
   gex_EP_RegisterHandlers(diompEp, AMTable,
                           sizeof(AMTable) / sizeof(gex_AM_Entry_t));
   MemManger = std::make_unique<diomp::MemoryManager>(diompTeam);
+}
+
+void __init_diomp_target() {
+  gex_Client_Init(&diompClient, &diompEp, &diompTeam, "diomp", nullptr, nullptr,
+                  0);
+  if (SegSize == 0)
+    SegSize = getOMPDistributedSize();
+  GASNET_Safe(gex_Segment_Attach(&diompSeg, diompTeam, SegSize));
+  gex_EP_RegisterHandlers(diompEp, AMTable,
+                          sizeof(AMTable) / sizeof(gex_AM_Entry_t));
+  MemManger = std::make_unique<diomp::MemoryManager>(diompTeam);
+  // Setup DiOMP Allocator
+
+  for (int DeviceID = 0; DeviceID < omp_get_num_devices(); DeviceID++) {
+    omp_target_setup_diompallocator(DeviceID, (void*)diomp_device_alloc, (void*)diomp_device_dealloc);
+  }
+}
+
+void *diomp_device_alloc(size_t Size, int DeviceId){
+  void *res = MemManger->getDeviceSegmentAddr(0, DeviceId);
+  printf("addd of device segment %p\n", res);
+  printf("Allocated size is %lu\n", Size);
+  return res;
+}
+
+void diomp_device_dealloc(){
+  return;
 }
 
 void omp_set_distributed_size(size_t Size) { SegSize = Size; }

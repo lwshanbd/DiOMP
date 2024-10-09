@@ -769,6 +769,10 @@ struct GenericDeviceTy : public DeviceAllocatorTy {
   Error initDeviceInfo(__tgt_device_info *DeviceInfo);
   virtual Error initDeviceInfoImpl(__tgt_device_info *DeviceInfo) = 0;
 
+  /// Setup the alloctor for DiOMP (PoC)
+  Error setupDiOMPAllocator(void *Allocator, void *Dealloctor);
+  virtual Error setupDiOMPAllocatorImpl(void *Allocator, void *Dealloctor) = 0;
+
   /// Create an event.
   Error createEvent(void **EventPtrStorage);
   virtual Error createEventImpl(void **EventPtrStorage) = 0;
@@ -1211,6 +1215,9 @@ public:
   /// Look up a kernel function in the given binary.
   int32_t get_function(__tgt_device_binary Binary, const char *Name,
                        void **KernelPtr);
+
+  /// Setup DiOMP Allocator
+  int32_t setup_diomp_allocator(int32_t DeviceId, void *Allocator, void *Dealloctor);
 
 private:
   /// Indicates if the platform runtime has been fully initialized.

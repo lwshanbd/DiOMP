@@ -3,6 +3,7 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <omp.h>
 
 #define THROW_ERROR(format, ...) \
     do { \

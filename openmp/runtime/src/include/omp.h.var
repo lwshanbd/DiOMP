@@ -240,6 +240,7 @@
                                              const size_t *, const size_t *, const size_t *, const size_t *, int, int,
                                              int, omp_depend_t *);
 
+    // extern void  __KAI_KMPC_CONVENTION  omp_target_setup_diompallocator(int, void *, void *);
     /* OpenMP 6.0 device memory routines */
     extern void * __KAI_KMPC_CONVENTION omp_target_memset(void *, int, size_t, int);
     extern void * __KAI_KMPC_CONVENTION omp_target_memset_async(void *, int, size_t, int, int, omp_depend_t *);

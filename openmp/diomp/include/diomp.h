@@ -22,7 +22,6 @@
 
 #include <atomic>
 
-
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -86,7 +85,12 @@ extern gex_Segment_t diompSeg;
 extern std::atomic<size_t> SegSize;
 
 void __init_diomp();
+void __init_diomp_target();
 void omp_set_distributed_size(size_t Size);
+
+
+void *diomp_device_alloc(size_t Size, int DeviceId);
+void diomp_device_dealloc();
 
 int omp_get_num_ranks();
 int omp_get_rank_num();
