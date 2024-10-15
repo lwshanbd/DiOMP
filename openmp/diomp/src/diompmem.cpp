@@ -22,7 +22,6 @@ MemoryManager::MemoryManager(gex_TM_t gexTeam) {
 
 #if OPENMP_ENABLE_DIOMP_DEVICE
   int targetDevicesNum = omp_get_num_devices();
-  printf("Node %d: Number of Devices: %d\n", MyRank, targetDevicesNum);
   DeviceEPs.resize(targetDevicesNum);
   gex_MK_t Kind;
   gex_MK_Create_args_t args;
@@ -43,10 +42,9 @@ MemoryManager::MemoryManager(gex_TM_t gexTeam) {
     GASNET_Safe(gex_EP_BindSegment(DeviceEP, DeviceSeg, 0));
     GASNET_Safe(gex_EP_PublishBoundSegment(diompTeam, &DeviceEP, 1, 0));
     DeviceEPs[DeviceID] = DeviceEP;
-    printf("Node %d: Device %d: Local Segment Start: %p\n", MyRank, DeviceID,
-           DeviceSegAddr);
+    // printf("Node %d: Device %d: Local Segment Start: %p\n", MyRank, DeviceID,
+    //        DeviceSegAddr);
   }
-  printf("number of ranks %d\n", gex_TM_QuerySize(gexTeam));
   DeviceSegInfo.resize(RanksNum,
                        std::vector<gex_Seginfo_t>(omp_get_num_devices()));
   for (int MyRank = 0; MyRank < RanksNum; MyRank++) {
@@ -88,6 +86,12 @@ void *MemoryManager::convertRemotetoLocalAddr(void *Ptr, int Rank,
                                   RemoteOffset);
 }
 
+void *MemoryManager::convertLocaltoRemoteAddr(void *Ptr, int Rank, int DeviceID) {
+  uintptr_t LocalBase = reinterpret_cast<uintptr_t>(getDeviceSegmentAddr(MyRank, DeviceID));
+  uintptr_t LocalOffset = reinterpret_cast<uintptr_t>(Ptr) - LocalBase;
+  return reinterpret_cast<void *>(reinterpret_cast<uintptr_t>(getDeviceSegmentAddr(Rank, DeviceID)) + LocalOffset);
+}
+
 void *MemoryManager::convertRemotetoLocalAddr(void *Ptr, int Rank) {
   uintptr_t RemoteOffset = reinterpret_cast<uintptr_t>(Ptr) -
                            reinterpret_cast<uintptr_t>(getSegmentAddr(Rank));
@@ -113,14 +117,31 @@ void *MemoryManager::globalAlloc(size_t Size) {
   return Ptr;
 }
 
-size_t MemoryManager::getAvailableSize() const {
+void *MemoryManager::deviceAlloc(size_t Size, int DeviceID) {
+  if (tmpRemain == reinterpret_cast<uintptr_t>(nullptr)) {
+    tmpRemain = reinterpret_cast<uintptr_t>(getDeviceSegmentAddr(MyRank, DeviceID)) + Size;
+    return getDeviceSegmentAddr(MyRank, DeviceID);
+  }
+  uintptr_t res = tmpRemain;
+  tmpRemain = tmpRemain + Size;
+  return (void *)res;
+}
+
+size_t MemoryManager::getDeviceAvailableSize() const {
   uintptr_t Start = reinterpret_cast<uintptr_t>(LocalSegStart);
   uintptr_t End = Start + LocalSegSize;
-
   if (End < Start) {
     return 0; // Handle overflow
   }
+  return static_cast<size_t>(End - Start);
+}
 
+size_t MemoryManager::getAvailableSize() const {
+  uintptr_t Start = reinterpret_cast<uintptr_t>(LocalSegStart);
+  uintptr_t End = Start + LocalSegSize;
+  if (End < Start) {
+    return 0; // Handle overflow
+  }
   return static_cast<size_t>(End - Start);
 }
 
@@ -154,6 +175,10 @@ bool MemoryManager::validGlobalAddr(void *Ptr, int Rank) {
   size_t Offset = reinterpret_cast<char *>(Ptr) -
                   reinterpret_cast<char *>(SegInfo[Rank].SegStart);
   return Offset <= SegInfo[Rank].SegSize;
+}
+
+gex_EP_t MemoryManager::getEP(int DeviceID){
+  return DeviceEPs[DeviceID];
 }
 
 } // namespace diomp

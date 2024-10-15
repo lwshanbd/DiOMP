@@ -102,6 +102,9 @@ void* llvm_omp_distributed_alloc(size_t Size);
 void omp_get(void *dst, int node, void *src, size_t nbytes);
 void omp_put(int node, void *dst, void *src, size_t nbytes);
 
+void omp_dget(void *dst, int node, void *src, size_t nbytes);
+void omp_dput(void *dst, int node, void *src, size_t nbytes);
+
 void diomp_barrier();
 void diomp_waitALLRMA();
 void diomp_waitRMA(omp_event_t ev);

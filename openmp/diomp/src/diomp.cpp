@@ -29,7 +29,7 @@
 #include <omp.h>
 #include "omptarget.h"
 
-std::unique_ptr<diomp::MemoryManager> MemManger;
+std::unique_ptr<diomp::MemoryManager> MemManager;
 gex_TM_t diompTeam;
 gex_Client_t diompClient;
 gex_EP_t diompEp;
@@ -149,7 +149,7 @@ void __init_diomp() {
   GASNET_Safe(gex_Segment_Attach(&diompSeg, diompTeam, SegSize));
   gex_EP_RegisterHandlers(diompEp, AMTable,
                           sizeof(AMTable) / sizeof(gex_AM_Entry_t));
-  MemManger = std::make_unique<diomp::MemoryManager>(diompTeam);
+  MemManager = std::make_unique<diomp::MemoryManager>(diompTeam);
 }
 
 void __init_diomp_target() {
@@ -160,7 +160,7 @@ void __init_diomp_target() {
   GASNET_Safe(gex_Segment_Attach(&diompSeg, diompTeam, SegSize));
   gex_EP_RegisterHandlers(diompEp, AMTable,
                           sizeof(AMTable) / sizeof(gex_AM_Entry_t));
-  MemManger = std::make_unique<diomp::MemoryManager>(diompTeam);
+  MemManager = std::make_unique<diomp::MemoryManager>(diompTeam);
   // Setup DiOMP Allocator
 
   for (int DeviceID = 0; DeviceID < omp_get_num_devices(); DeviceID++) {
@@ -169,13 +169,13 @@ void __init_diomp_target() {
 }
 
 void *diomp_device_alloc(size_t Size, int DeviceId){
-  void *res = MemManger->getDeviceSegmentAddr(0, DeviceId);
-  printf("addd of device segment %p\n", res);
-  printf("Allocated size is %lu\n", Size);
-  return res;
+  void* MemAddr = nullptr;
+  MemAddr = MemManager->deviceAlloc(Size, DeviceId);
+  return MemAddr;
 }
 
 void diomp_device_dealloc(){
+
   return;
 }
 
@@ -188,21 +188,21 @@ int omp_get_num_ranks() { return gex_TM_QuerySize(diompTeam); }
 int omp_get_rank_num() { return gex_TM_QueryRank(diompTeam); }
 
 // Get the starting address of the memory segment on a node
-void *omp_get_space(int node) { return MemManger->getSegmentAddr(node); }
+void *omp_get_space(int node) { return MemManager->getSegmentAddr(node); }
 
 // Get the size of the memory segment on a node
 uintptr_t omp_get_length_space(int node) {
-  return MemManger->getSegmentSpace(node);
+  return MemManager->getSegmentSpace(node);
 }
 
 // Allocate shared memory accessible by all nodes
 void *llvm_omp_distributed_alloc(size_t Size) {
-  return MemManger->globalAlloc(Size);
+  return MemManager->globalAlloc(Size);
 }
 
 // Templated version to allocate typed shared memory
 template <typename T> void *diomp_alloc(size_t Size) {
-  return MemManger->globalAlloc(Size * sizeof(T));
+  return MemManager->globalAlloc(Size * sizeof(T));
 }
 
 // RMA Operations
@@ -221,6 +221,31 @@ void omp_put(int node, void *dest, void *src, size_t nbytes) {
   if (Error != 0) {
     THROW_ERROR("OpenMP PUT Error! Error code is %d", Error);
   }
+}
+
+void omp_dget(void *dest, int node, void *src, size_t nbytes) {
+  auto tmpEP = MemManager->getEP(0);
+  gex_EP_Index_t EPIdx = gex_EP_QueryIndex(tmpEP);
+  gex_TM_t tmpTM = gex_TM_Pair(tmpEP, EPIdx);
+  void *srcR = MemManager->convertLocaltoRemoteAddr(src, node, 0);
+  auto Error = gex_RMA_GetNBI(tmpTM, dest, node, srcR, nbytes, 0);
+  if (Error != 0) {
+    THROW_ERROR("OpenMP DPUT Error! Error code is %d", Error);
+  }
+  return;
+}
+
+void omp_dput(void *dest, int node, void *src, size_t nbytes) {
+  auto tmpEP = MemManager->getEP(0);
+  gex_EP_Index_t EPIdx = gex_EP_QueryIndex(tmpEP);
+  gex_TM_t tmpTM = gex_TM_Pair(tmpEP, EPIdx);
+  void *destR = MemManager->convertLocaltoRemoteAddr(dest, node, 0);
+  auto Error =
+    gex_RMA_PutNBI(tmpTM, node, destR, src, nbytes, GEX_EVENT_DEFER, 0);
+  if (Error != 0) {
+    THROW_ERROR("OpenMP DPUT Error! Error code is %d", Error);
+  }
+  return;
 }
 
 // End of RMA Operations

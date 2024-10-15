@@ -597,6 +597,8 @@ struct CUDADeviceTy : public GenericDeviceTy {
 
   /// Deallocate memory on the device or related to the device.
   int free(void *TgtPtr, TargetAllocTy Kind) override {
+    if (UseDiOMPAllocator != false)
+      return OFFLOAD_SUCCESS;
     if (TgtPtr == nullptr)
       return OFFLOAD_SUCCESS;
 

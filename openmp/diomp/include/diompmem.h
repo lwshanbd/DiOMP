@@ -14,6 +14,7 @@
 #define DIOMP_MEM_H
 
 
+#include <cstdint>
 #ifndef GASNET_PAR
 #define GASNET_PAR
 #endif
@@ -61,6 +62,8 @@ class MemoryManager {
     void *LocalSegRemain;
     size_t LocalSegSize;
 
+    uintptr_t tmpRemain = reinterpret_cast<uintptr_t>(nullptr);
+
   public:
     MemoryManager(gex_TM_t gexTeam);
     ~MemoryManager(){};
@@ -70,14 +73,19 @@ class MemoryManager {
     void *getDeviceSegmentAddr(int Rank, int DeviceID);
 
     void *globalAlloc(size_t Size);
+    void *deviceAlloc(size_t Size, int DeviceID);
 
     size_t getAvailableSize() const;
+    size_t getDeviceAvailableSize() const;
     size_t getOffset(void *Ptr); // Compute ptr on local memory
     size_t getOffset(void *Ptr, int Rank); // Compute ptr on remote memory
 
     bool validGlobalAddr(void *Ptr, int Rank);
     void *convertRemotetoLocalAddr(void *Ptr, int Rank, int DeviceID);
     void *convertRemotetoLocalAddr(void *Ptr, int Rank);
+    void *convertLocaltoRemoteAddr(void *Ptr, int Rank, int DeviceID);
+
+    gex_EP_t getEP(int DeviceID);
 
 
 
