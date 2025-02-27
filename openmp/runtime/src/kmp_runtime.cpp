@@ -578,6 +578,7 @@ static void __kmp_print_team_storage_map(const char *header, kmp_team_t *team,
 static void __kmp_init_allocator() {
   __kmp_init_memkind();
   __kmp_init_target_mem();
+  __kmp_init_distributed_mem();
 }
 static void __kmp_fini_allocator() { __kmp_fini_memkind(); }
 

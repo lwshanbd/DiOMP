@@ -520,6 +520,7 @@ kmp_set_warnings_off                        780
         omp_target_disassociate_ptr         889
         omp_target_memset                   3000
         omp_target_memset_async             3001
+        omp_target_setup_diompallocator     4001
     %endif
 
 kmp_set_disp_num_buffers                    890
@@ -582,6 +583,8 @@ kmp_set_disp_num_buffers                    890
     llvm_omp_target_host_mem_alloc         DATA
     llvm_omp_target_shared_mem_alloc       DATA
     llvm_omp_target_device_mem_alloc       DATA
+
+    llvm_omp_distributed_mem_alloc         DATA
 
     omp_default_mem_space                  DATA
     omp_large_cap_mem_space                DATA

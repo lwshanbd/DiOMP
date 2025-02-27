@@ -9747,6 +9747,17 @@ StmtResult TreeTransform<Derived>::TransformOMPTaskyieldDirective(
 }
 
 template <typename Derived>
+StmtResult TreeTransform<Derived>::TransformOMPInitDiOMPDirective(
+    OMPInitDiOMPDirective *D) {
+  DeclarationNameInfo DirName;
+  getDerived().getSema().OpenMP().StartOpenMPDSABlock(OMPD_initdiomp, DirName, nullptr,
+                                             D->getBeginLoc());
+  StmtResult Res = getDerived().TransformOMPExecutableDirective(D);
+  getDerived().getSema().OpenMP().EndOpenMPDSABlock(Res.get());
+  return Res;
+}
+
+template <typename Derived>
 StmtResult
 TreeTransform<Derived>::TransformOMPBarrierDirective(OMPBarrierDirective *D) {
   DeclarationNameInfo DirName;

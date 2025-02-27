@@ -23,6 +23,12 @@
 #include <mutex>
 #include <set>
 
+#if defined(OPENMP_ENABLE_DIOMP_DEVICE)
+#include <gasnet.h>
+#include <gasnet_mk.h>
+#include <gasnet_coll.h>
+#endif // OPENMP_ENABLE_DIOMP_DEVICE
+
 #include "ExclusiveAccess.h"
 #include "OffloadEntry.h"
 #include "omptarget.h"
@@ -157,6 +163,8 @@ struct DeviceTy {
 
   /// Indicate that there are pending images for this device or not.
   void setHasPendingImages(bool V) { HasPendingImages = V; }
+  /// Init DiOMP for OpenMP Target offloading
+  void setupDiOMPAllocator(void *Allocator, void *Dealloctor);
 
 private:
   /// Deinitialize the device (and plugin).

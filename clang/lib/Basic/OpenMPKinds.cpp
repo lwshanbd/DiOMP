@@ -749,6 +749,7 @@ bool clang::isOpenMPCapturingDirective(OpenMPDirectiveKind DKind) {
     case OMPD_taskwait:
     case OMPD_taskyield:
     case OMPD_assume:
+    case OMPD_initdiomp:
       return false;
     default:
       return !isOpenMPLoopTransformationDirective(DKind);

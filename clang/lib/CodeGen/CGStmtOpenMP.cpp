@@ -1404,6 +1404,7 @@ void CodeGenFunction::EmitOMPReductionClauseInit(
     case OMPD_parallel_for_simd:
     case OMPD_task:
     case OMPD_taskyield:
+    case OMPD_initdiomp:
     case OMPD_error:
     case OMPD_barrier:
     case OMPD_taskwait:
@@ -5532,6 +5533,11 @@ void CodeGenFunction::EmitOMPTaskDirective(const OMPTaskDirective &S) {
 void CodeGenFunction::EmitOMPTaskyieldDirective(
     const OMPTaskyieldDirective &S) {
   CGM.getOpenMPRuntime().emitTaskyieldCall(*this, S.getBeginLoc());
+}
+
+void CodeGenFunction::EmitOMPInitDiOMPDirective(
+    const OMPInitDiOMPDirective &S) {
+  CGM.getOpenMPRuntime().emitInitDiOMPCall(*this, S.getBeginLoc());
 }
 
 void CodeGenFunction::EmitOMPErrorDirective(const OMPErrorDirective &S) {

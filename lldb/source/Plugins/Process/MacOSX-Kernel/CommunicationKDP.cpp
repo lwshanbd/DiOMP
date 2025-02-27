@@ -293,7 +293,7 @@ bool CommunicationKDP::CheckForPacket(const uint8_t *src, size_t src_len,
     case ePacketTypeReply | KDP_KERNELVERSION:
     case ePacketTypeReply | KDP_READPHYSMEM64:
     case ePacketTypeReply | KDP_WRITEPHYSMEM64:
-    case ePacketTypeReply | KDP_READIOPORT:
+    case ePacketTypeReply | KDP_READIOMPORT:
     case ePacketTypeReply | KDP_WRITEIOPORT:
     case ePacketTypeReply | KDP_READMSR64:
     case ePacketTypeReply | KDP_WRITEMSR64:
@@ -699,8 +699,8 @@ const char *CommunicationKDP::GetCommandAsCString(uint8_t command) {
     return "KDP_READPHYSMEM64";
   case KDP_WRITEPHYSMEM64:
     return "KDP_WRITEPHYSMEM64";
-  case KDP_READIOPORT:
-    return "KDP_READIOPORT";
+  case KDP_READIOMPORT:
+    return "KDP_READIOMPORT";
   case KDP_WRITEIOPORT:
     return "KDP_WRITEIOPORT";
   case KDP_READMSR64:
@@ -849,7 +849,7 @@ void CommunicationKDP::DumpPacket(Stream &s, const DataExtractor &packet) {
           s.Printf(" (path = \"%s\")", path);
         } break;
 
-        case KDP_READIOPORT:
+        case KDP_READIOMPORT:
         case KDP_READMSR64: {
           const uint32_t error = packet.GetU32(&offset);
           const uint32_t count = packet.GetByteSize() - offset;
@@ -1097,7 +1097,7 @@ void CommunicationKDP::DumpPacket(Stream &s, const DataExtractor &packet) {
                               0, 0);                // No bitfields
         } break;
 
-        case KDP_READIOPORT: {
+        case KDP_READIOMPORT: {
           const uint16_t lcpu = packet.GetU16(&offset);
           const uint16_t address = packet.GetU16(&offset);
           const uint16_t nbytes = packet.GetU16(&offset);

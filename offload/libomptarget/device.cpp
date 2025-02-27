@@ -281,3 +281,7 @@ bool DeviceTy::useAutoZeroCopy() {
     return false;
   return RTL->use_auto_zero_copy(RTLDeviceID);
 }
+
+void DeviceTy::setupDiOMPAllocator(void *Allocator, void *Dealloctor) {
+  RTL->setup_diomp_allocator(RTLDeviceID, Allocator, Dealloctor);
+}

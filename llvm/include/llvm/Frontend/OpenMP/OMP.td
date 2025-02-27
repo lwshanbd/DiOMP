@@ -1185,6 +1185,10 @@ def OMP_TaskYield : Directive<"taskyield"> {
   let association = AS_None;
   let category = CA_Executable;
 }
+def OMP_InitDiOMP : Directive<"initdiomp"> {
+  let association = AS_None;
+  let category = CA_Executable;
+}
 def OMP_Teams : Directive<"teams"> {
   let allowedClauses = [
     VersionedClause<OMPC_Allocate>,

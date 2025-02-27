@@ -1044,6 +1044,10 @@ void StmtProfiler::VisitOMPScopeDirective(const OMPScopeDirective *S) {
   VisitOMPExecutableDirective(S);
 }
 
+void StmtProfiler::VisitOMPInitDiOMPDirective(const OMPInitDiOMPDirective *S) {
+  VisitOMPExecutableDirective(S);
+}
+
 void StmtProfiler::VisitOMPSingleDirective(const OMPSingleDirective *S) {
   VisitOMPExecutableDirective(S);
 }

@@ -2087,6 +2087,18 @@ void CGOpenMPRuntime::emitTaskyieldCall(CodeGenFunction &CGF,
     Region->emitUntiedSwitch(CGF);
 }
 
+void CGOpenMPRuntime::emitInitDiOMPCall(CodeGenFunction &CGF,
+                                        SourceLocation Loc) {
+  if (!CGF.HaveInsertPoint())
+    return;
+  CGF.EmitRuntimeCall(OMPBuilder.getOrCreateRuntimeFunction(
+                            CGM.getModule(), OMPRTL___init_diomp));
+
+  if (auto *Region = dyn_cast_or_null<CGOpenMPRegionInfo>(CGF.CapturedStmtInfo))
+    Region->emitUntiedSwitch(CGF);
+}
+
+
 void CGOpenMPRuntime::emitTaskgroupRegion(CodeGenFunction &CGF,
                                           const RegionCodeGenTy &TaskgroupOpGen,
                                           SourceLocation Loc) {

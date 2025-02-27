@@ -246,6 +246,7 @@
                                              const size_t *, const size_t *, const size_t *, const size_t *, int, int,
                                              int, omp_depend_t *);
 
+    // extern void  __KAI_KMPC_CONVENTION  omp_target_setup_diompallocator(int, void *, void *);
     /* OpenMP 6.0 device memory routines */
     extern void * __KAI_KMPC_CONVENTION omp_target_memset(void *, int, size_t, int);
     extern void * __KAI_KMPC_CONVENTION omp_target_memset_async(void *, int, size_t, int, int, omp_depend_t *);
@@ -414,6 +415,7 @@
       llvm_omp_target_host_mem_alloc = 100,
       llvm_omp_target_shared_mem_alloc = 101,
       llvm_omp_target_device_mem_alloc = 102,
+      llvm_omp_distributed_mem_alloc = 200,
       KMP_ALLOCATOR_MAX_HANDLE = UINTPTR_MAX
     } omp_allocator_handle_t;
 #       if __cplusplus >= 201103

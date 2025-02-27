@@ -556,9 +556,16 @@ struct CUDADeviceTy : public GenericDeviceTy {
     switch (Kind) {
     case TARGET_ALLOC_DEFAULT:
     case TARGET_ALLOC_DEVICE:
-      Res = cuMemAlloc(&DevicePtr, Size);
-      MemAlloc = (void *)DevicePtr;
-      break;
+      if (UseDiOMPAllocator == false) {
+        Res = cuMemAlloc(&DevicePtr, Size);
+        MemAlloc = (void *)DevicePtr;
+        break;
+      }
+      else {
+        MemAlloc = DiOMPAllocator(Size, DeviceId);
+        return MemAlloc;
+      }
+
     case TARGET_ALLOC_HOST:
       Res = cuMemAllocHost(&MemAlloc, Size);
       break;
@@ -588,6 +595,8 @@ struct CUDADeviceTy : public GenericDeviceTy {
 
   /// Deallocate memory on the device or related to the device.
   int free(void *TgtPtr, TargetAllocTy Kind) override {
+    if (UseDiOMPAllocator != false)
+      return OFFLOAD_SUCCESS;
     if (TgtPtr == nullptr)
       return OFFLOAD_SUCCESS;
 
@@ -898,6 +907,14 @@ struct CUDADeviceTy : public GenericDeviceTy {
     CUevent Event = reinterpret_cast<CUevent>(EventPtr);
     CUresult Res = cuEventSynchronize(Event);
     return Plugin::check(Res, "Error in cuEventSynchronize: %s");
+  }
+
+  /// Setup DiOMP allocators for the device.
+  Error setupDiOMPAllocatorImpl(void *Allocator, void *Dealloctor) override {
+    DiOMPAllocator = (DiOMPAllocatorTy *)Allocator;
+    DiOMPDeallocator = (DiOMPDeallocatorTy *)Dealloctor;
+    UseDiOMPAllocator = true;
+    return Plugin::success();
   }
 
   /// Print information about the device.
@@ -1246,6 +1263,14 @@ private:
       return "sm_" + std::to_string(Major * 10 + Minor);
     }
   } ComputeCapability;
+
+  
+  using DiOMPAllocatorTy = void *(size_t, int32_t);
+  using DiOMPDeallocatorTy = void *(size_t, int32_t);
+
+  DiOMPAllocatorTy *DiOMPAllocator = nullptr;
+  DiOMPAllocatorTy *DiOMPDeallocator = nullptr;
+  bool UseDiOMPAllocator = false;
 
   /// The maximum number of warps that can be resident on all the SMs
   /// simultaneously.

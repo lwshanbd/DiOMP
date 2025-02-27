@@ -2547,6 +2547,11 @@ void ASTStmtReader::VisitOMPTaskyieldDirective(OMPTaskyieldDirective *D) {
   VisitOMPExecutableDirective(D);
 }
 
+void ASTStmtReader::VisitOMPInitDiOMPDirective(OMPInitDiOMPDirective *D) {
+  VisitStmt(D);
+  VisitOMPExecutableDirective(D);
+}
+
 void ASTStmtReader::VisitOMPBarrierDirective(OMPBarrierDirective *D) {
   VisitStmt(D);
   VisitOMPExecutableDirective(D);
@@ -3689,6 +3694,10 @@ Stmt *ASTReader::ReadStmtFromStream(ModuleFile &F) {
 
     case STMT_OMP_TASKYIELD_DIRECTIVE:
       S = OMPTaskyieldDirective::CreateEmpty(Context, Empty);
+      break;
+
+    case STMT_OMP_INITDIOMP_DIRECTIVE:
+      S = OMPInitDiOMPDirective::CreateEmpty(Context, Empty);
       break;
 
     case STMT_OMP_BARRIER_DIRECTIVE:
