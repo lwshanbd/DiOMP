@@ -2213,11 +2213,3 @@ int32_t GenericPluginTy::setup_diomp_allocator(int32_t DeviceId, void *Allocator
 
   return OFFLOAD_SUCCESS;
 }
-
-bool llvm::omp::target::plugin::libomptargetSupportsRPC() {
-#ifdef LIBOMPTARGET_RPC_SUPPORT
-  return true;
-#else
-  return false;
-#endif
-}

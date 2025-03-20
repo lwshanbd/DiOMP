@@ -28,13 +28,14 @@ if(GASNET_CONDUIT_IBV)
 elseif(GASNET_CONDUIT_OFI)
   set(GASNET_CORE_INCLUDE "${GASNET_ROOT}/include/")
   set(GASNET_INCLUDE "${GASNET_ROOT}/include/ofi-conduit/")
+  set(GASNET_LIB "${GASNET_ROOT}/lib")
   set(LIBFABRIC_ROOT "/opt/cray/libfabric/1.20.1")
   set(LIBFABRIC_LIB "${LIBFABRIC_ROOT}/lib64")
   set(LIBPMI_LIB "/opt/cray/pe/pmi/6.1.15/lib")
   set(MPI_ROOT "/opt/cray/pe/mpich/8.1.30/ofi/gnu/12.3")
   set(MPI_INCLUDE "${MPI_ROOT}/include")
   set(LIBMPI_LIB "${MPI_ROOT}/lib")
-  link_directories(${LIBFABRIC_LIB} ${LIBPMI_LIB} ${LIBMPI_LIB})
+  link_directories(${LIBFABRIC_LIB} ${LIBPMI_LIB} ${LIBMPI_LIB} ${GASNET_LIB} LLVMSupport)
   message("Using OFI")
 endif()
 include_directories(${GASNET_CORE_INCLUDE} ${GASNET_INCLUDE} ${MPI_INCLUDE})
@@ -106,6 +107,7 @@ set(DIOMP_LIBS
   -lrt
   -lhwloc
   -pthread
+  -lLLVMSupport
 
   # GASNet IBV libraries
   $<$<BOOL:${GASNET_CONDUIT_IBV}>:-lgasnet-ibv-par>
