@@ -169,6 +169,11 @@ void ompx_dallreduce(void *src, void *dst, size_t count, omp_device_dt_t dt, omp
 void ompx_dreduce(void *src, void *dst, size_t count, omp_device_dt_t dt, omp_red_op_t op, int root, int dst_id);
 #endif
 
+#ifdef DIOMP_ENABLE_HIP
+void ompx_dallreduce(void *src, void *dst, size_t count, omp_device_dt_t dt, omp_red_op_t op, int dst_id);
+void ompx_dreduce(void *src, void *dst, size_t count, omp_device_dt_t dt, omp_red_op_t op, int root, int dst_id);
+#endif
+
 #ifdef __cplusplus
 }
 #endif

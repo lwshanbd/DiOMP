@@ -31,7 +31,13 @@
 #include <gasnetex.h>
 #include <vector>
 
+#ifdef DIOMP_ENABLE_CUDA  
 #include <cuda_runtime.h>
+#endif
+
+#ifdef DIOMP_ENABLE_HIP
+#include <hip/hip_runtime.h>
+#endif
 
 extern gex_TM_t diompTeam;
 extern gex_Client_t diompClient;
@@ -142,19 +148,31 @@ private:
 #ifdef DIOMP_ENABLE_HIP
 class HIPMemoryManager : public MemoryManager {
 public:
-  HIPMemoryManager(gex_TM_t gexTeam, int Mode = 1);
+  HIPMemoryManager(gex_TM_t gexTeam, int Mode = 1, size_t DeviceSegSize = 16 * 1024 * 1024 * 1024);
   ~HIPMemoryManager() = default;
 
   // Override device operations with empty implementations for now
-  void *deviceAlloc(size_t Size, int DeviceId) override { return nullptr; }
-  void deviceDealloc() override {}
-  void *getDeviceSegmentAddr(int Rank, int DeviceId) override { return nullptr; }
-  size_t getDeviceOffset(void *Ptr) override { return 0; }
-  void *convertLocaltoRemoteAddr(void *Ptr, int Rank, int DeviceId) override { return nullptr; }
-  gex_EP_t getEP(int DeviceId) override { return nullptr; }
+  void *deviceAlloc(size_t Size, int DeviceId) override;
+  void deviceDealloc() override;
+  void *getDeviceSegmentAddr(int Rank, int DeviceId) override;
+  size_t getDeviceOffset(void *Ptr) override;
+  void *convertLocaltoRemoteAddr(void *Ptr, int Rank, int DeviceId);
+  void *convertRemotetoLocalAddr(void *Ptr, int Rank, int DeviceId);
+  size_t getOffset(void *Ptr, int Rank, int DeviceId);
+  gex_EP_t getEP(int DeviceId) override;
+  void *getPeerPtr(int DeviceId) { return PeerPtrs[DeviceId]; };
+
 
 private:
-  // HIP specific members to be added
+  int LocalRank;
+  std::vector<gex_EP_t> DeviceEPs;
+  std::vector<cudaIpcMemHandle_t> IpcHandles;
+  std::vector<std::vector<gex_DeviceSeginfo_t>> DeviceSegInfo;
+  std::vector<void *> PeerPtrs;
+  size_t DeviceSegSize;
+  uintptr_t DeviceRemain = 0;
+
+  hipIpcMemHandle_t getIpcHandle(int Rank);
 };
 #endif
 

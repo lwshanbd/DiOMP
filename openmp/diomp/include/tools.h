@@ -68,6 +68,33 @@
   } while (0)
 #endif
 
+#ifdef DIOMP_ENABLE_HIP
+#include <hip/hip_runtime.h>
+#include <rccl.h>
+#endif 
+
+#ifdef DIOMP_ENABLE_HIP
+#define HIPCHECK(cmd)                                                          \
+  do {                                                                         \
+    hipError_t err = cmd;                                                      \
+    if (err != hipSuccess) {                                                   \
+      printf("Failed: HIP error %s:%d '%s'\n", __FILE__, __LINE__,             \
+             hipGetErrorString(err));                                          \
+      exit(EXIT_FAILURE);                                                      \
+    }                                                                          \
+  } while (0)
+
+#define RCCLCHECK(cmd)                                                         \
+  do {                                                                         \
+    rcclResult_t r = cmd;                                                      \
+    if (r != rcclSuccess) {                                                    \
+      printf("Failed, RCCL error %s:%d '%s'\n", __FILE__, __LINE__,            \
+             rcclGetErrorString(r));                                           \
+      exit(EXIT_FAILURE);                                                      \
+    }                                                                          \
+  } while (0)
+#endif
+
 #define AM_ACK_LOCK 129
 #define AM_LOCK_REQ_IDX 200
 #define AM_LOCK_REL_IDX 201

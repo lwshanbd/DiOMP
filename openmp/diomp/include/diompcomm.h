@@ -76,6 +76,47 @@ public:
 
 #endif
 
+#ifdef DIOMP_ENABLE_HIP
+
+class HIPStreamManager {
+private:
+  std::vector<hipStream_t> Streams;
+  std::mutex StreamMutex;
+};
+
+public:
+  hipStream_t createStream() {
+    std::lock_guard<std::mutex> lock(StreamMutex);
+    hipStream_t Stream;
+    hipStreamCreate(&Stream);
+    Streams.push_back(Stream);
+    return Stream;
+  }
+
+  void synchronizeAll() {
+    std::lock_guard<std::mutex> lock(StreamMutex);
+    for (auto Stream : Streams) {
+      hipStreamSynchronize(Stream);
+    }
+  }
+
+  void clearStreams() {
+    std::lock_guard<std::mutex> lock(StreamMutex);
+    for (auto Stream : Streams) {
+      hipStreamDestroy(Stream);
+    }
+    Streams.clear();
+  }
+
+  ~HIPStreamManager() {
+    for (auto Stream : Streams) {
+      hipStreamDestroy(Stream);
+    }
+  }
+};
+
+#endif
+
 // Base communicator class
 class DiOMPCommunicator {
 public:
@@ -204,23 +245,47 @@ private:
 // HIP device communicator class
 class DiOMPHIPCommunicator : public DiOMPDeviceCommunicator {
 public:
-  DiOMPHIPCommunicator(int devicesNum = 1);
+  DiOMPHIPCommunicator(int Mode = 1);
   ~DiOMPHIPCommunicator();
 
-  void deviceBcast(void *data, size_t count, omp_device_dt_t dt, int root,
-                  int deviceId);
-  void deviceAllreduce(void *src, void *dst, size_t count, omp_device_dt_t dt,
-                      omp_red_op_t op, int deviceId);
-  void deviceReduce(void *src, void *dst, size_t count, omp_device_dt_t dt,
-                   omp_red_op_t op, int root, int deviceId);
-
-  void dget(void *Dest, int Node, void *Src, size_t Size, 
+  // HIP specific implementations
+  void dget(void *Dest, int Node, void *Src, size_t Size,
             int DstId, int SrcId) override;
   void dput(void *Dest, int Node, void *Src, size_t Size,
             int DstId, int SrcId) override;
 
+  void waitAllRMA() override;
+
+  // HIP collective operations
+  void dbcast(void *Data, size_t Size, omp_device_dt_t Dt, 
+              int Node, int DstId) override;
+  void dallreduce(void *Src, void *Dst, size_t Size,
+                  omp_device_dt_t Dt, omp_red_op_t Op, int DstId) override;
+  void dreduce(void *Src, void *Dst, size_t Size,
+               omp_device_dt_t Dt, omp_red_op_t Op, 
+               int Root, int DstId) override;
+
+  static void *hip_device_alloc(size_t Size, int DeviceId){
+    return StaticHIPMem->deviceAlloc(Size, DeviceId);
+  }
+  static void hip_device_dealloc(){
+    StaticHIPMem->deviceDealloc();
+  }
+
+  void initRCCL();
+
+
 private:
   // HIP specific members
+  HIPStreamManager StreamManager;
+  HIPMemoryManager* HipMem;
+  static HIPMemoryManager* StaticHipMem;
+
+  rcclComm_t RcclComm;
+  hipStream_t RcclStream;
+  // Per process multiple devices
+  hipStream_t *RcclStreams;
+  rcclComm_t *RcclComms;
 };
 #endif
 

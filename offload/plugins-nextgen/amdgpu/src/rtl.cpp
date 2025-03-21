@@ -322,6 +322,10 @@ struct AMDGPUMemoryPoolTy {
     return Access != HSA_AMD_MEMORY_POOL_ACCESS_NEVER_ALLOWED;
   }
 
+  void setUseDiOMPAllocator() {
+    this->UseDiOMPAllocator = true;
+  }
+
   /// Allow the device to access a specific allocation.
   Error enableAccess(void *Ptr, int64_t Size,
                      const llvm::SmallVector<hsa_agent_t> &Agents) const {
@@ -379,6 +383,9 @@ private:
   /// The global flags of memory pool. Only valid if the memory pool belongs to
   /// the global segment.
   uint32_t GlobalFlags;
+
+  /// Flag of DiOMP
+  bool UseDiOMPAllocator = false;
 };
 
 /// Class that implements a memory manager that gets memory from a specific
@@ -2533,6 +2540,18 @@ struct AMDGPUDeviceTy : public GenericDeviceTy, AMDGenericDeviceTy {
     return Plugin::error("Synchronize event not implemented");
   }
 
+  /// Setup DiOMP allocators for the device.
+  Error setupDiOMPAllocatorImpl(void *Allocator, void *Dealloctor) override {
+    DiOMPAllocator = (DiOMPAllocatorTy *)Allocator;
+    DiOMPDeallocator = (DiOMPDeallocatorTy *)Dealloctor;
+    UseDiOMPAllocator = true;
+    for (AMDGPUMemoryPoolTy *Pool : AllMemoryPools) {
+      Pool->setUseDiOMPAllocator();
+    }
+
+    return Plugin::success();
+  }
+
   /// Print information about the device.
   Error obtainInfoImpl(InfoQueueTy &Info) override {
     char TmpChar[1000];
@@ -2949,6 +2968,13 @@ private:
   /// True is the system is configured with XNACK-Enabled.
   /// False otherwise.
   bool IsXnackEnabled = false;
+
+  using DiOMPAllocatorTy = void *(size_t, int32_t);
+  using DiOMPDeallocatorTy = void *(size_t, int32_t);
+
+  DiOMPAllocatorTy *DiOMPAllocator = nullptr;
+  DiOMPAllocatorTy *DiOMPDeallocator = nullptr;
+  bool UseDiOMPAllocator = false;
 };
 
 Error AMDGPUDeviceImageTy::loadExecutable(const AMDGPUDeviceTy &Device) {
@@ -3506,6 +3532,10 @@ void *AMDGPUDeviceTy::allocate(size_t Size, void *, TargetAllocTy Kind) {
   case TARGET_ALLOC_DEFAULT:
   case TARGET_ALLOC_DEVICE:
   case TARGET_ALLOC_DEVICE_NON_BLOCKING:
+    if (UseDiOMPAllocator) {
+      void *MemAlloc = DiOMPAllocator(Size, DeviceId);
+      return MemAlloc;
+    }
     MemoryPool = CoarseGrainedMemoryPools[0];
     break;
   case TARGET_ALLOC_HOST:
