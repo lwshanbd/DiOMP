@@ -185,19 +185,17 @@ void __init_diomp_target(int Mode = 1) {
   MemManager = std::make_unique<diomp::MemoryManager>(diompTeam, Mode);
 
 #ifdef DIOMP_ENABLE_CUDA
-
   MemManager = std::make_unique<diomp::CUDAMemoryManager>(diompTeam, Mode, SegSize);
   auto cudaComm = std::make_unique<diomp::DiOMPCUDACommunicator>(Mode);
   cudaComm->initNCCL();
   Comm = std::move(cudaComm);
-
 #endif
 
 #ifdef DIOMP_ENABLE_HIP
-
   MemManager = std::make_unique<diomp::HIPMemoryManager>(diompTeam, Mode);
-  Comm = std::make_unique<diomp::DiOMPHIPCommunicator>();
-
+  auto hipComm = std::make_unique<diomp::DiOMPHIPCommunicator>(Mode);
+  hipComm->initRCCL();
+  Comm = std::move(hipComm);
 #endif
 }
 
