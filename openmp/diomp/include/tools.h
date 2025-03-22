@@ -70,7 +70,7 @@
 
 #ifdef DIOMP_ENABLE_HIP
 #include <hip/hip_runtime.h>
-#include <rccl.h>
+#include <rccl/rccl.h>
 #endif 
 
 #ifdef DIOMP_ENABLE_HIP
@@ -86,10 +86,10 @@
 
 #define RCCLCHECK(cmd)                                                         \
   do {                                                                         \
-    rcclResult_t r = cmd;                                                      \
-    if (r != rcclSuccess) {                                                    \
+    ncclResult_t r = cmd;                                                      \
+    if (r != ncclSuccess) {                                                    \
       printf("Failed, RCCL error %s:%d '%s'\n", __FILE__, __LINE__,            \
-             rcclGetErrorString(r));                                           \
+             ncclGetErrorString(r));                                           \
       exit(EXIT_FAILURE);                                                      \
     }                                                                          \
   } while (0)

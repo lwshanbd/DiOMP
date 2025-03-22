@@ -288,6 +288,7 @@ HIPMemoryManager::HIPMemoryManager(gex_TM_t GexTeam, int Mode,
   Args.gex_class = GEX_MK_CLASS_HIP;
   Args.gex_args.gex_class_hip.gex_hipDevice = LocalRank;
   std::vector<gex_MK_t> MkArray(TargetDevicesNum);
+  void *LocalPtr = nullptr;
   for (int DeviceID = 0; DeviceID < TargetDevicesNum; DeviceID++) {
     gex_EP_t DeviceEP;
     Args.gex_args.gex_class_hip.gex_hipDevice = DeviceID + LocalRank;
@@ -448,11 +449,11 @@ size_t HIPMemoryManager::getOffset(void *Ptr, int Rank, int DeviceId) {
 
 gex_EP_t HIPMemoryManager::getEP(int DeviceId) { return DeviceEPs[DeviceId]; }
 
-cudaIpcMemHandle_t HIPMemoryManager::getIpcHandle(int Rank) {
+hipIpcMemHandle_t HIPMemoryManager::getIpcHandle(int Rank) {
   return IpcHandles[Rank];
 }
 
-}
+
 #endif // DIOMP_ENABLE_HIP
 
 } // namespace diomp

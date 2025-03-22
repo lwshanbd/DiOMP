@@ -56,10 +56,8 @@ endif()
 # CUDA support
 option(OPENMP_DIOMP_ENABLE_CUDA "Enable CUDA support in DiOMP" OFF)
 if(OPENMP_DIOMP_ENABLE_CUDA)
-  if(NOT OPENMP_ENABLE_DIOMP_DEVICE)
-    message(FATAL_ERROR "CUDA support requires OPENMP_ENABLE_DIOMP_DEVICE=ON")
-  endif()
-  
+  set(OPENMP_ENABLE_DIOMP_DEVICE ON)
+
   message(STATUS "Building DiOMP with CUDA support")
   add_definitions(-DDIOMP_ENABLE_CUDA)
   
@@ -80,17 +78,39 @@ if(OPENMP_DIOMP_ENABLE_CUDA)
   link_directories(${CUDA_HOME}/lib64 ${NCCL_HOME}/lib)
 endif()
 
+
 # HIP support 
-option(DIOMP_ENABLE_HIP "Enable HIP support in DiOMP" OFF)
-if(DIOMP_ENABLE_HIP)
-  if(NOT OPENMP_ENABLE_DIOMP_DEVICE)
-    message(FATAL_ERROR "HIP support requires OPENMP_ENABLE_DIOMP_DEVICE=ON")
-  endif()
-  
+option(OPENMP_DIOMP_ENABLE_HIP "Enable HIP support in DiOMP" OFF)
+if(OPENMP_DIOMP_ENABLE_HIP)
+  set(OPENMP_ENABLE_DIOMP_DEVICE ON)
+
   message(STATUS "Building DiOMP with HIP support")
   add_definitions(-DDIOMP_ENABLE_HIP)
-  # Add HIP related setup here
+  
+  # Define HIP platform (AMD by default)
+  option(OPENMP_DIOMP_HIP_PLATFORM_NVIDIA "Use NVIDIA as HIP platform instead of AMD" OFF)
+  if(OPENMP_DIOMP_HIP_PLATFORM_NVIDIA)
+    add_definitions(-D__HIP_PLATFORM_NVIDIA__)
+    message(STATUS "Using NVIDIA as HIP platform")
+  else()
+    add_definitions(-D__HIP_PLATFORM_AMD__)
+    message(STATUS "Using AMD as HIP platform")
+  endif()
+
+  if(DEFINED ENV{ROCM_HOME})
+    set(ROCM_HOME $ENV{ROCM_HOME})
+  else()
+    set(ROCM_HOME "/hrtc/apps/rocm/5.7.0/aarch64/rocky9")
+  endif()
+  
+  include_directories(${ROCM_HOME}/include)
+  link_directories(${ROCM_HOME}/lib)
+  
 endif()
+
+# 添加项目的 include 目录
+include_directories(${CMAKE_CURRENT_SOURCE_DIR}/include)
+include_directories(${CMAKE_CURRENT_SOURCE_DIR}/../../offload/include)
 
 add_library(diomp SHARED
   src/diomp.cpp
@@ -108,11 +128,11 @@ set(DIOMP_LIBS
   -lhwloc
   -pthread
   -lLLVMSupport
-
+  -L/shared/data1/Users/l1065028/mi300/llvm-mi300/lib/x86_64-unknown-linux-gnu
   # GASNet IBV libraries
   $<$<BOOL:${GASNET_CONDUIT_IBV}>:-lgasnet-ibv-par>
   $<$<BOOL:${GASNET_CONDUIT_IBV}>:-libverbs>
-  $<$<BOOL:${GASNET_CONDUIT_IBV}>:--offload-arch=sm_90>
+  $<$<BOOL:${GASNET_CONDUIT_IBV}>:--offload-arch=gfx942>
 
   # GASNet OFI libraries
   $<$<BOOL:${GASNET_CONDUIT_OFI}>:${GASNET_LIB}/libgasnet-ofi-par.a>
@@ -125,14 +145,14 @@ set(DIOMP_LIBS
   $<$<BOOL:${OPENMP_DIOMP_ENABLE_CUDA}>:-lcudart>
   $<$<BOOL:${OPENMP_DIOMP_ENABLE_CUDA}>:-lcuda>
   $<$<BOOL:${OPENMP_DIOMP_ENABLE_CUDA}>:-lnccl>
+  # HIP libraries
+  $<$<BOOL:${OPENMP_DIOMP_ENABLE_HIP}>:-lamdhip64>
+  $<$<BOOL:${OPENMP_DIOMP_ENABLE_HIP}>:-lrccl>
+  
 )
+add_definitions(-DGASNETT_USE_GCC_ATTRIBUTE_NOINLINE=1)
 
 target_link_libraries(diomp PUBLIC ${DIOMP_LIBS})
-
-target_include_directories(diomp PUBLIC
-  ${CMAKE_CURRENT_SOURCE_DIR}/include
-  ${CMAKE_CURRENT_SOURCE_DIR}/../../offload/include
-)
 
 install(TARGETS diomp LIBRARY DESTINATION "${OPENMP_INSTALL_LIBDIR}")
 install(FILES 
@@ -141,6 +161,7 @@ install(FILES
   include/diompmem.h
   include/diompcomm.h
   DESTINATION "${LIBOMP_HEADERS_INSTALL_PATH}")
+
 # install(PROGRAMS 
 #  src/diompcxx.py
 #  src/diompcc.py

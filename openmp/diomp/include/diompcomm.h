@@ -82,7 +82,7 @@ class HIPStreamManager {
 private:
   std::vector<hipStream_t> Streams;
   std::mutex StreamMutex;
-};
+
 
 public:
   hipStream_t createStream() {
@@ -276,16 +276,18 @@ public:
 
 
 private:
+
+  int LocalRank = 0;
   // HIP specific members
   HIPStreamManager StreamManager;
   HIPMemoryManager* HipMem;
-  static HIPMemoryManager* StaticHipMem;
+  static HIPMemoryManager* StaticHIPMem;
 
-  rcclComm_t RcclComm;
+  ncclComm_t RcclComm;
   hipStream_t RcclStream;
   // Per process multiple devices
   hipStream_t *RcclStreams;
-  rcclComm_t *RcclComms;
+  ncclComm_t *RcclComms;
 };
 #endif
 

@@ -29,8 +29,14 @@
 #include "omptarget.h"
 #include <omp.h>
 
+#ifdef DIOMP_ENABLE_CUDA  
 #include <cuda.h>
 #include <cuda_runtime.h>
+#endif
+
+#ifdef DIOMP_ENABLE_HIP
+#include <hip/hip_runtime.h>
+#endif
 
 #include <memory> // Add this for std::unique_ptr
 

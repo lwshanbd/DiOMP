@@ -27,6 +27,14 @@
 
 #endif
 
+#ifdef DIOMP_ENABLE_HIP
+
+#include <hip/hip_runtime.h>
+#include <rccl/rccl.h>
+
+#endif
+
+
 
 #ifdef __cplusplus
 
@@ -86,6 +94,38 @@ typedef enum omp_event {
 
 
 #ifdef DIOMP_ENABLE_CUDA
+
+typedef enum omp_device_dt {
+  // Integer types:
+  ompx_d_int8 = ncclInt8,
+  ompx_d_uint8 = ncclUint8,
+  ompx_d_int32 = ncclInt32,
+  ompx_d_uint32 = ncclUint32,
+  ompx_d_int64 = ncclInt64,
+  ompx_d_uint64 = ncclUint64,
+  ompx_d_int = ncclInt,
+  
+  // Floating-point types:
+  ompx_d_float16 = ncclFloat16,
+  ompx_d_half = ncclHalf,
+  ompx_d_float32 = ncclFloat32,
+  ompx_d_float = ncclFloat,
+  ompx_d_float64 = ncclFloat64,
+  ompx_d_double = ncclDouble,
+
+} omp_device_dt_t;
+
+typedef enum omp_red_op {
+  ompx_d_sum = ncclSum,
+  ompx_d_prod = ncclProd,
+  ompx_d_min = ncclMin,
+  ompx_d_max = ncclMax,
+  ompx_d_avg = ncclAvg,
+} omp_red_op_t;
+
+#endif
+
+#ifdef DIOMP_ENABLE_HIP
 
 typedef enum omp_device_dt {
   // Integer types:

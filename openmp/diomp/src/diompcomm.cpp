@@ -326,9 +326,12 @@ void diomp_device_dealloc() {
 
 #ifdef DIOMP_ENABLE_HIP
 // HIP communicator implementations
+
+HIPMemoryManager *DiOMPHIPCommunicator::StaticHIPMem = nullptr;
+
 DiOMPHIPCommunicator::DiOMPHIPCommunicator(int Mode) {
   HipMem = dynamic_cast<HIPMemoryManager *>(Mem);
-  StaticHipMem = HipMem;
+  StaticHIPMem = HipMem;
   this->Mode = Mode;
   if (Mode == 1) {
     DevicesNum = omp_get_num_devices();
@@ -352,7 +355,7 @@ DiOMPHIPCommunicator::DiOMPHIPCommunicator(int Mode) {
   }
   if (DevicesNum > 1) {
     RcclStreams = new hipStream_t[DevicesNum];
-    RcclComms = new rcclComm_t[DevicesNum];
+    RcclComms = new ncclComm_t[DevicesNum];
   }
 }
 
@@ -360,7 +363,7 @@ DiOMPHIPCommunicator::~DiOMPHIPCommunicator() {
   if (DevicesNum > 1) {
     for (int i = 0; i < DevicesNum; i++) {
       if (RcclComms[i] != nullptr) {
-        rcclCommDestroy(RcclComms[i]);
+        ncclCommDestroy(RcclComms[i]);
       }
       if (RcclStreams[i] != nullptr) {
         hipStreamDestroy(RcclStreams[i]);
@@ -370,7 +373,7 @@ DiOMPHIPCommunicator::~DiOMPHIPCommunicator() {
     delete[] RcclComms;
   } else {
     if (RcclComm != nullptr) {
-      rcclCommDestroy(RcclComm);
+      ncclCommDestroy(RcclComm);
     }
     if (RcclStream != nullptr) {
       hipStreamDestroy(RcclStream);
@@ -378,7 +381,7 @@ DiOMPHIPCommunicator::~DiOMPHIPCommunicator() {
   }
 }
 
-void DiOMPHIPCommunicator::initRccl() {
+void DiOMPHIPCommunicator::initRCCL() {
   ncclUniqueId RcclId;
   if (omp_get_rank_num() == 0) {
     ncclGetUniqueId(&RcclId);
@@ -388,18 +391,18 @@ void DiOMPHIPCommunicator::initRccl() {
       gex_Coll_BroadcastNB(Team, 0, &RcclId, &RcclId, sizeof(RcclId), 0));
 
   if (DevicesNum == 1) {
-    HIPACHECK(hipSetDevice(LocalRank));
+    HIPCHECK(hipSetDevice(LocalRank));
     RCCLCHECK(ncclCommInitRank(&RcclComm, omp_get_num_ranks(), RcclId,
                                omp_get_rank_num()));
-    HIPACHECK(hipStreamCreate(&RcclStream));
+    HIPCHECK(hipStreamCreate(&RcclStream));
   } else {
     RCCLCHECK(ncclGroupStart());
     for (int DeviceId = 0; DeviceId < DevicesNum; DeviceId++) {
-      HIPACHECK(hipSetDevice(DeviceId));
+      HIPCHECK(hipSetDevice(DeviceId));
       RCCLCHECK(ncclCommInitRank(&RcclComms[DeviceId],
                                  omp_get_num_ranks() * DevicesNum, RcclId,
                                  omp_get_rank_num() * DevicesNum + DeviceId));
-      HIPACHECK(hipStreamCreate(&RcclStreams[DeviceId]));
+      HIPCHECK(hipStreamCreate(&RcclStreams[DeviceId]));
     }
     RCCLCHECK(ncclGroupEnd());
   }
@@ -426,12 +429,12 @@ void DiOMPHIPCommunicator::dget(void *Dest, int Node, void *Src, size_t Size,
       void *DevicePtr = nullptr;
       hipStream_t Stream = StreamManager.createStream();
       // hipIpcMemHandle_t IpcHandle = HipMem->getIpcHandle(Node);
-      // HIPACHECK(hipIpcOpenMemHandle(&DevicePtr, IpcHandle,
+      // HIPCHECK(hipIpcOpenMemHandle(&DevicePtr, IpcHandle,
       //                               hipIpcMemLazyEnablePeerAccess));
       DevicePtr = HipMem->getPeerPtr(SrcDevice);
       size_t Offset = HipMem->getOffset(SrcR, Node, 0);
       char *RemotePtr = static_cast<char *>(DevicePtr) + Offset;
-      HIPACHECK(hipMemcpyPeerAsync(Dest, DstDevice, RemotePtr,
+      HIPCHECK(hipMemcpyPeerAsync(Dest, DstDevice, RemotePtr,
                                     SrcDevice, Size, Stream));
       // printf("hipMemcpyPeerAsync\n");
       return;
@@ -449,16 +452,15 @@ void DiOMPHIPCommunicator::dget(void *Dest, int Node, void *Src, size_t Size,
   gex_TM_t CommTM = gex_TM_Pair(LocalEP, RemoteIdx);
 
   void *SrcR = HipMem->convertLocaltoRemoteAddr(Src, Node, SrcId);
-  auto Error =
-      gex_RMA_PutNBI(CommTM, Node, DstR, Src, Size, GEX_EVENT_DEFER, GEX_FLAG_NONE);
+  auto Error = gex_RMA_GetNBI(CommTM, Dest, Node, SrcR, Size, GEX_FLAG_NONE);
   if (Error != 0) {
-    THROW_ERROR("OpenMP Device Put Error! Error code is %d", Error);
+    THROW_ERROR("OpenMP Device Get Error! Error code is %d", Error);
   }
 
   return;
 }
 
-void DiOMPHIPCommunicator::dput(void *Dst, int Node, void *Src, size_t Size,
+void DiOMPHIPCommunicator::dput(void *Dest, int Node, void *Src, size_t Size,
                                  int DstId, int SrcId) {
   if (Mode != 1) {
     int TotalDevices = omp_get_num_devices();
@@ -476,11 +478,11 @@ void DiOMPHIPCommunicator::dput(void *Dst, int Node, void *Src, size_t Size,
 
       hipIpcMemHandle_t IpcHandle = HipMem->getIpcHandle(Node);
       void *DevicePtr = nullptr;
-      HIPACHECK(hipIpcOpenMemHandle(&DevicePtr, IpcHandle,
+      HIPCHECK(hipIpcOpenMemHandle(&DevicePtr, IpcHandle,
                                     hipIpcMemLazyEnablePeerAccess));
       size_t Offset = HipMem->getOffset(SrcR, Node, 0);
       char *RemotePtr = static_cast<char *>(DevicePtr) + Offset;
-      HIPACHECK(hipMemcpyPeerAsync(Dest, DstDevice, RemotePtr,
+      HIPCHECK(hipMemcpyPeerAsync(RemotePtr, DstDevice, Src,
                                     SrcDevice, Size, Stream));
       // printf("hipMemcpyPeerAsync\n");
       return;
@@ -497,7 +499,7 @@ void DiOMPHIPCommunicator::dput(void *Dst, int Node, void *Src, size_t Size,
   gex_EP_Index_t RemoteIdx = gex_EP_QueryIndex(RemoteEP);
   gex_TM_t CommTM = gex_TM_Pair(LocalEP, RemoteIdx);    
 
-  void *DstR = HipMem->convertLocaltoRemoteAddr(Dst, Node, DstId);
+  void *DstR = HipMem->convertLocaltoRemoteAddr(Dest, Node, DstId);
   auto Error =
       gex_RMA_PutNBI(CommTM, Node, DstR, Src, Size, GEX_EVENT_DEFER, GEX_FLAG_NONE);
   if (Error != 0) {
@@ -510,9 +512,9 @@ void DiOMPHIPCommunicator::dput(void *Dst, int Node, void *Src, size_t Size,
 void DiOMPHIPCommunicator::dbcast(void *Data, size_t Size, omp_device_dt_t Dt,
                                    int Node, int DstId) {
   if (DevicesNum == 1) {
-    HIPACHECK(hipSetDevice(DstId));
+    HIPCHECK(hipSetDevice(DstId));
     RCCLCHECK(ncclBcast(Data, Size, (ncclDataType_t)Dt, Node, RcclComm, RcclStream));
-    HIPACHECK(hipStreamSynchronize(RcclStream));
+    HIPCHECK(hipStreamSynchronize(RcclStream));
     return;
   }
 
@@ -527,7 +529,7 @@ void DiOMPHIPCommunicator::dbcast(void *Data, size_t Size, omp_device_dt_t Dt,
   RCCLCHECK(ncclGroupEnd());
 
   for (int i = 0; i < DevicesNum; i++) {
-    HIPACHECK(hipStreamSynchronize(RcclStreams[i]));
+    HIPCHECK(hipStreamSynchronize(RcclStreams[i]));
   }
 }
 
@@ -535,24 +537,22 @@ void DiOMPHIPCommunicator::dallreduce(void *Src, void *Dst, size_t Size,
                                        omp_device_dt_t Dt, omp_red_op_t Op,
                                        int DstId) {
   if (DevicesNum == 1) {
-    HIPACHECK(hipSetDevice(DstId)); 
+    HIPCHECK(hipSetDevice(DstId)); 
     RCCLCHECK(ncclAllReduce(Src, Dst, Size, (ncclDataType_t)Dt, (ncclRedOp_t)Op,
                             RcclComm, RcclStream));
-    HIPACHECK(hipStreamSynchronize(RcclStream));
+    HIPCHECK(hipStreamSynchronize(RcclStream));
     return;
   }
 
   RCCLCHECK(ncclGroupStart());
   for (int i = 0; i < DevicesNum; i++) {
-    void *RemoteData =
-        HipMem->convertLocaltoRemoteAddr(Data, omp_get_rank_num(), DstId);
-    RCCLCHECK(ncclAllReduce(RemoteData, Dst, Size, (ncclDataType_t)Dt,
+    RCCLCHECK(ncclAllReduce(Src, Dst, Size, (ncclDataType_t)Dt,
                             (ncclRedOp_t)Op, RcclComms[i], RcclStreams[i]));
   } 
   RCCLCHECK(ncclGroupEnd());
 
   for (int i = 0; i < DevicesNum; i++) {
-    HIPACHECK(hipStreamSynchronize(RcclStreams[i]));
+    HIPCHECK(hipStreamSynchronize(RcclStreams[i]));
   }
 }
 
@@ -560,25 +560,23 @@ void DiOMPHIPCommunicator::dreduce(void *Src, void *Dst, size_t Size,
                                     omp_device_dt_t Dt, omp_red_op_t Op,
                                     int Root, int DstId) {
   if (DevicesNum == 1) {
-    HIPACHECK(hipSetDevice(DstId));
+    HIPCHECK(hipSetDevice(DstId));
     RCCLCHECK(ncclReduce(Src, Dst, Size, (ncclDataType_t)Dt, (ncclRedOp_t)Op, 
                          Root, RcclComm, RcclStream));
-    HIPACHECK(hipStreamSynchronize(RcclStream));
+    HIPCHECK(hipStreamSynchronize(RcclStream));
     return;
   }
 
   RCCLCHECK(ncclGroupStart());
   for (int i = 0; i < DevicesNum; i++) {  
-    void *RemoteData =
-        HipMem->convertLocaltoRemoteAddr(Data, omp_get_rank_num(), DstId);
-    RCCLCHECK(ncclReduce(RemoteData, Dst, Size, (ncclDataType_t)Dt,
+    RCCLCHECK(ncclReduce(Src, Dst, Size, (ncclDataType_t)Dt,
                          (ncclRedOp_t)Op, Root * DevicesNum + DstId,
                          RcclComms[i], RcclStreams[i]));
   } 
   RCCLCHECK(ncclGroupEnd());
 
   for (int i = 0; i < DevicesNum; i++) {
-    HIPACHECK(hipStreamSynchronize(RcclStreams[i]));
+    HIPCHECK(hipStreamSynchronize(RcclStreams[i]));
   }
 }
 

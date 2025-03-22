@@ -54,7 +54,12 @@ struct gex_DeviceSeginfo_t {
   void *SegStart;
   void *SegRemain;
   size_t SegSize;
+#ifdef DIOMP_ENABLE_CUDA
   cudaIpcMemHandle_t IpcHandle;
+#endif
+#ifdef DIOMP_ENABLE_HIP
+  hipIpcMemHandle_t IpcHandle;
+#endif
 };
 
 struct MemoryBlock {
@@ -162,17 +167,19 @@ public:
   gex_EP_t getEP(int DeviceId) override;
   void *getPeerPtr(int DeviceId) { return PeerPtrs[DeviceId]; };
 
+  hipIpcMemHandle_t getIpcHandle(int Rank);
+
 
 private:
   int LocalRank;
   std::vector<gex_EP_t> DeviceEPs;
-  std::vector<cudaIpcMemHandle_t> IpcHandles;
+  std::vector<hipIpcMemHandle_t> IpcHandles;
   std::vector<std::vector<gex_DeviceSeginfo_t>> DeviceSegInfo;
   std::vector<void *> PeerPtrs;
   size_t DeviceSegSize;
   uintptr_t DeviceRemain = 0;
 
-  hipIpcMemHandle_t getIpcHandle(int Rank);
+
 };
 #endif
 
