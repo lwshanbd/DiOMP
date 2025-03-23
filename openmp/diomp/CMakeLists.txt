@@ -128,7 +128,7 @@ set(DIOMP_LIBS
   -lhwloc
   -pthread
   -lLLVMSupport
-  -L/shared/data1/Users/l1065028/mi300/llvm-mi300/lib/x86_64-unknown-linux-gnu
+  
   # GASNet IBV libraries
   $<$<BOOL:${GASNET_CONDUIT_IBV}>:-lgasnet-ibv-par>
   $<$<BOOL:${GASNET_CONDUIT_IBV}>:-libverbs>
@@ -148,6 +148,8 @@ set(DIOMP_LIBS
   # HIP libraries
   $<$<BOOL:${OPENMP_DIOMP_ENABLE_HIP}>:-lamdhip64>
   $<$<BOOL:${OPENMP_DIOMP_ENABLE_HIP}>:-lrccl>
+  $<$<BOOL:${OPENMP_DIOMP_ENABLE_HIP}>:-L/shared/data1/Users/l1065028/mi300/llvm-mi300/lib/x86_64-unknown-linux-gnu>
+
   
 )
 add_definitions(-DGASNETT_USE_GCC_ATTRIBUTE_NOINLINE=1)

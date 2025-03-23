@@ -360,6 +360,7 @@ DiOMPHIPCommunicator::DiOMPHIPCommunicator(int Mode) {
 }
 
 DiOMPHIPCommunicator::~DiOMPHIPCommunicator() {
+
   if (DevicesNum > 1) {
     for (int i = 0; i < DevicesNum; i++) {
       if (RcclComms[i] != nullptr) {

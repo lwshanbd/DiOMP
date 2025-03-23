@@ -286,18 +286,23 @@ HIPMemoryManager::HIPMemoryManager(gex_TM_t GexTeam, int Mode,
   gex_MK_Create_args_t Args;
   Args.gex_flags = 0;
   Args.gex_class = GEX_MK_CLASS_HIP;
-  Args.gex_args.gex_class_hip.gex_hipDevice = LocalRank;
+  // Args.gex_args.gex_class_hip.gex_hipDevice = LocalRank;
   std::vector<gex_MK_t> MkArray(TargetDevicesNum);
   void *LocalPtr = nullptr;
   for (int DeviceID = 0; DeviceID < TargetDevicesNum; DeviceID++) {
     gex_EP_t DeviceEP;
     Args.gex_args.gex_class_hip.gex_hipDevice = DeviceID + LocalRank;
     GASNET_Safe(gex_MK_Create(&MkArray[DeviceID], diompClient, &Args, 0));
-    void *DeviceSegAddr = omp_target_alloc(DeviceSegSize, DeviceID + LocalRank);
-    LocalPtr = DeviceSegAddr;
+    void *DeviceSegAddr = nullptr;
+    printf("here\n");
+    // omp_target_alloc(DeviceSegSize, DeviceID + LocalRank);
+
     gex_Segment_t DeviceSeg = GEX_SEGMENT_INVALID;
     GASNET_Safe(gex_Segment_Create(&DeviceSeg, diompClient, DeviceSegAddr,
                                    DeviceSegSize, MkArray[DeviceID], 0));
+    LocalPtr = gex_Segment_QueryAddr(DeviceSeg);
+
+    
     GASNET_Safe(gex_EP_Create(&DeviceEP, diompClient, GEX_EP_CAPABILITY_RMA, 0));
     GASNET_Safe(gex_EP_BindSegment(DeviceEP, DeviceSeg, 0));
     GASNET_Safe(gex_EP_PublishBoundSegment(diompTeam, &DeviceEP, 1, 0));
@@ -325,7 +330,7 @@ HIPMemoryManager::HIPMemoryManager(gex_TM_t GexTeam, int Mode,
       HIPCHECK(hipSetDevice(DeviceID));
       HIPCHECK(hipDeviceEnablePeerAccess(LocalRank, 0));
     }
-
+    // printf("LocalPtr %p\n", LocalPtr);
     hipIpcMemHandle_t IpcHandle;
     HIPCHECK(hipIpcGetMemHandle(&IpcHandle, LocalPtr));
     IpcHandles.resize(RanksNum);
@@ -335,7 +340,7 @@ HIPMemoryManager::HIPMemoryManager(gex_TM_t GexTeam, int Mode,
                                           sizeof(hipIpcMemHandle_t), 0));
       IpcHandles[i] = Handle;
     }
-    for (int DeviceID = 0; DeviceID < omp_get_num_devices(); DeviceID++) {
+    for (int DeviceID = 0; DeviceID < fmin(omp_get_num_devices(), RanksNum); DeviceID++) {
       if (DeviceID == LocalRank)
       {
         PeerPtrs.push_back(LocalPtr);

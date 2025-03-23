@@ -198,7 +198,7 @@ void __init_diomp_target(int Mode = 1) {
 #endif
 
 #ifdef DIOMP_ENABLE_HIP
-  MemManager = std::make_unique<diomp::HIPMemoryManager>(diompTeam, Mode);
+  MemManager = std::make_unique<diomp::HIPMemoryManager>(diompTeam, Mode, SegSize);
   auto hipComm = std::make_unique<diomp::DiOMPHIPCommunicator>(Mode);
   hipComm->initRCCL();
   Comm = std::move(hipComm);

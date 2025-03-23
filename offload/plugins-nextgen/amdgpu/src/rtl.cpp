@@ -302,6 +302,7 @@ struct AMDGPUMemoryPoolTy {
 
   /// Allocate memory on the memory pool.
   Error allocate(size_t Size, void **PtrStorage) {
+    printf("allocate %zu\n", Size);
     hsa_status_t Status =
         hsa_amd_memory_pool_allocate(MemoryPool, Size, 0, PtrStorage);
     return Plugin::check(Status, "Error in hsa_amd_memory_pool_allocate: %s");
