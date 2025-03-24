@@ -285,3 +285,7 @@ bool DeviceTy::useAutoZeroCopy() {
 void DeviceTy::setupDiOMPAllocator(void *Allocator, void *Dealloctor) {
   RTL->setup_diomp_allocator(RTLDeviceID, Allocator, Dealloctor);
 }
+
+void DeviceTy::resetDefaultAllocator() {
+  RTL->reset_default_allocator(RTLDeviceID);
+}

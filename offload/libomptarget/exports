@@ -50,6 +50,7 @@ VERS1.0 {
     omp_target_memset;
     omp_target_memset_async;
     omp_target_setup_diompallocator;
+    omp_target_setup_default_allocator;
     omp_target_associate_ptr;
     omp_target_disassociate_ptr;
     llvm_omp_target_alloc_host;

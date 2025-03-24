@@ -212,6 +212,7 @@ void ompx_dreduce(void *src, void *dst, size_t count, omp_device_dt_t dt, omp_re
 #ifdef DIOMP_ENABLE_HIP
 void ompx_dallreduce(void *src, void *dst, size_t count, omp_device_dt_t dt, omp_red_op_t op, int dst_id);
 void ompx_dreduce(void *src, void *dst, size_t count, omp_device_dt_t dt, omp_red_op_t op, int root, int dst_id);
+void ompx_dbcast(void *data, size_t count, omp_device_dt_t dt, int node, int dst_id);
 #endif
 
 #ifdef __cplusplus

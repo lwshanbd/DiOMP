@@ -1556,6 +1556,10 @@ Error GenericDeviceTy::setupDiOMPAllocator(void *Allocator, void *Dealloctor) {
   return setupDiOMPAllocatorImpl(Allocator, Dealloctor);
 }
 
+Error GenericDeviceTy::resetDefaultAllocator() {
+  return resetDefaultAllocatorImpl();
+}
+
 Error GenericDeviceTy::printInfo() {
   InfoQueueTy InfoQueue;
 
@@ -2212,4 +2216,12 @@ int32_t GenericPluginTy::setup_diomp_allocator(int32_t DeviceId, void *Allocator
   }
 
   return OFFLOAD_SUCCESS;
+}
+
+int32_t GenericPluginTy::reset_default_allocator(int32_t DeviceId) {
+  auto Err = getDevice(DeviceId).resetDefaultAllocator();
+  if (Err) {
+    REPORT("Failure to reset default allocator on device %d: %s\n", DeviceId,
+           toString(std::move(Err)).data());
+  }
 }

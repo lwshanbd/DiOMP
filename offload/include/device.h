@@ -166,6 +166,9 @@ struct DeviceTy {
   /// Init DiOMP for OpenMP Target offloading
   void setupDiOMPAllocator(void *Allocator, void *Dealloctor);
 
+  /// Reset the default allocator for this device.
+  void resetDefaultAllocator();
+
 private:
   /// Deinitialize the device (and plugin).
   void deinit();

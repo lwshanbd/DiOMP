@@ -294,7 +294,6 @@ HIPMemoryManager::HIPMemoryManager(gex_TM_t GexTeam, int Mode,
     Args.gex_args.gex_class_hip.gex_hipDevice = DeviceID + LocalRank;
     GASNET_Safe(gex_MK_Create(&MkArray[DeviceID], diompClient, &Args, 0));
     void *DeviceSegAddr = nullptr;
-    printf("here\n");
     // omp_target_alloc(DeviceSegSize, DeviceID + LocalRank);
 
     gex_Segment_t DeviceSeg = GEX_SEGMENT_INVALID;

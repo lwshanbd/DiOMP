@@ -846,6 +846,10 @@ struct GenericDeviceTy : public DeviceAllocatorTy {
   Error setupDiOMPAllocator(void *Allocator, void *Dealloctor);
   virtual Error setupDiOMPAllocatorImpl(void *Allocator, void *Dealloctor) = 0;
 
+  /// Reset the default allocator for this device.
+  Error resetDefaultAllocator();
+  virtual Error resetDefaultAllocatorImpl() = 0;
+
   /// Create an event.
   Error createEvent(void **EventPtrStorage);
   virtual Error createEventImpl(void **EventPtrStorage) = 0;
@@ -1344,6 +1348,9 @@ public:
 
   /// Setup DiOMP Allocator
   int32_t setup_diomp_allocator(int32_t DeviceId, void *Allocator, void *Dealloctor);
+
+  /// Reset the default allocator for this device.
+  int32_t reset_default_allocator(int32_t DeviceId);
 
 private:
   /// Indicates if the platform runtime has been fully initialized.

@@ -917,6 +917,12 @@ struct CUDADeviceTy : public GenericDeviceTy {
     return Plugin::success();
   }
 
+  /// Reset the default allocator for this device.
+  Error resetDefaultAllocatorImpl() override {
+    UseDiOMPAllocator = false;
+    return Plugin::success();
+  }
+
   /// Print information about the device.
   Error obtainInfoImpl(InfoQueueTy &Info) override {
     char TmpChar[1000];

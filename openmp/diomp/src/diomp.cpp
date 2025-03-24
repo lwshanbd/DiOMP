@@ -203,6 +203,7 @@ void __init_diomp_target(int Mode = 1) {
   hipComm->initRCCL();
   Comm = std::move(hipComm);
 #endif
+  
 }
 
 void *diomp_device_alloc(size_t Size, int DeviceId) {

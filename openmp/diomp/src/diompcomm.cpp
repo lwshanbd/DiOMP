@@ -343,10 +343,8 @@ DiOMPHIPCommunicator::DiOMPHIPCommunicator(int Mode) {
   } else {
     LocalRank = omp_get_rank_num() % omp_get_num_devices();
     DevicesNum = 1;
-    for (int DeviceID = 0; DeviceID < omp_get_num_devices(); DeviceID++) {
-      omp_target_setup_diompallocator(DeviceID, (void *)diomp_device_alloc,
-                                      (void *)diomp_device_dealloc);
-    }
+    omp_target_setup_diompallocator(LocalRank, (void *)diomp_device_alloc,
+                                    (void *)diomp_device_dealloc);
     omp_set_default_device(LocalRank);
   }
 
@@ -360,9 +358,10 @@ DiOMPHIPCommunicator::DiOMPHIPCommunicator(int Mode) {
 }
 
 DiOMPHIPCommunicator::~DiOMPHIPCommunicator() {
-
+  
   if (DevicesNum > 1) {
     for (int i = 0; i < DevicesNum; i++) {
+      omp_target_setup_default_allocator(i);
       if (RcclComms[i] != nullptr) {
         ncclCommDestroy(RcclComms[i]);
       }
@@ -373,6 +372,7 @@ DiOMPHIPCommunicator::~DiOMPHIPCommunicator() {
     delete[] RcclStreams;
     delete[] RcclComms;
   } else {
+    omp_target_setup_default_allocator(LocalRank);
     if (RcclComm != nullptr) {
       ncclCommDestroy(RcclComm);
     }
