@@ -26,7 +26,6 @@
 #include <stdexcept>
 #include <vector>
 
-#include "omptarget.h"
 #include <omp.h>
 
 #ifdef DIOMP_ENABLE_CUDA  

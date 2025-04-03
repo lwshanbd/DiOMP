@@ -21,6 +21,24 @@ else()
   set(GASNET_CONDUIT_IBV ON)
 endif()
 
+if(OPENMP_OFI_ROOT)
+  set(OFI_ROOT "${OPENMP_OFI_ROOT}")
+else()
+  set(OFI_ROOT "/opt/cray/libfabric/2.1")
+endif()
+
+if(OPENMP_PMI_ROOT)
+  set(PMI_ROOT "${OPENMP_PMI_ROOT}")
+else()
+  set(PMI_ROOT "/opt/cray/pe/pmi/6.1.15.6")
+endif()
+
+if(OPENMP_MPI_ROOT)
+  set(MPI_ROOT "${OPENMP_MPI_ROOT}")
+else()
+  set(MPI_ROOT "/opt/cray/pe/mpich/8.1.30/ofi/gnu/12.3")
+endif()
+
 if(GASNET_CONDUIT_IBV)
   set(GASNET_CORE_INCLUDE "${GASNET_ROOT}/include/")
   set(GASNET_INCLUDE "${GASNET_ROOT}/include/ibv-conduit/")
@@ -29,13 +47,10 @@ elseif(GASNET_CONDUIT_OFI)
   set(GASNET_CORE_INCLUDE "${GASNET_ROOT}/include/")
   set(GASNET_INCLUDE "${GASNET_ROOT}/include/ofi-conduit/")
   set(GASNET_LIB "${GASNET_ROOT}/lib")
-  set(LIBFABRIC_ROOT "/opt/cray/libfabric/1.20.1")
-  set(LIBFABRIC_LIB "${LIBFABRIC_ROOT}/lib64")
-  set(LIBPMI_LIB "/opt/cray/pe/pmi/6.1.15/lib")
-  set(MPI_ROOT "/opt/cray/pe/mpich/8.1.30/ofi/gnu/12.3")
-  set(MPI_INCLUDE "${MPI_ROOT}/include")
+  set(LIBFABRIC_LIB "${OFI_ROOT}/lib64")
+  set(LIBPMI_LIB "${PMI_ROOT}/lib")
   set(LIBMPI_LIB "${MPI_ROOT}/lib")
-  link_directories(${LIBFABRIC_LIB} ${LIBPMI_LIB} ${LIBMPI_LIB} ${GASNET_LIB} LLVMSupport)
+  link_directories(${LIBFABRIC_LIB} ${LIBPMI_LIB} ${LIBMPI_LIB} ${GASNET_LIB} /opt/cray/pe/mpich/8.1.31/ofi/crayclang/18.0/lib /opt/cray/pe/mpich/8.1.31/gtl/lib LLVMSupport)
   message("Using OFI")
 endif()
 include_directories(${GASNET_CORE_INCLUDE} ${GASNET_INCLUDE} ${MPI_INCLUDE})
@@ -99,16 +114,17 @@ if(OPENMP_DIOMP_ENABLE_HIP)
 
   if(DEFINED ENV{ROCM_HOME})
     set(ROCM_HOME $ENV{ROCM_HOME})
+  elseif(DEFINED ENV{ROCM_PATH})
+    set(ROCM_HOME $ENV{ROCM_PATH})
   else()
     set(ROCM_HOME "/hrtc/apps/rocm/5.7.0/aarch64/rocky9")
   endif()
-  
+
   include_directories(${ROCM_HOME}/include)
   link_directories(${ROCM_HOME}/lib)
   
 endif()
 
-# 添加项目的 include 目录
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/include)
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/../../offload/include)
 
@@ -148,7 +164,7 @@ set(DIOMP_LIBS
   # HIP libraries
   $<$<BOOL:${OPENMP_DIOMP_ENABLE_HIP}>:-lamdhip64>
   $<$<BOOL:${OPENMP_DIOMP_ENABLE_HIP}>:-lrccl>
-  $<$<BOOL:${OPENMP_DIOMP_ENABLE_HIP}>:-L/shared/data1/Users/l1065028/mi300/llvm-mi300/lib/x86_64-unknown-linux-gnu>
+  $<$<BOOL:${OPENMP_DIOMP_ENABLE_HIP}>:-L/p/lustre2/shan4/softwares/diomp/lib/x86_64-unknown-linux-gnu>
 
   
 )

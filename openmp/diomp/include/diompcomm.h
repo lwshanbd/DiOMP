@@ -23,7 +23,7 @@
 #include "diomp.h"
 #include "diompmem.h"
 #include "tools.h"
-#include "omptarget.h"
+#include "omp.h"
 #include <cstddef>
 #include <gasnet.h>
 #include <gasnet_mk.h>
@@ -31,6 +31,8 @@
 #include <gasnetex.h>
 #include <vector>
 #include <memory>
+#include <queue>
+#include <mutex>
 
 extern std::unique_ptr<diomp::MemoryManager> MemManager;
 
@@ -78,42 +80,42 @@ public:
 
 #ifdef DIOMP_ENABLE_HIP
 
-class HIPStreamManager {
-private:
-  std::vector<hipStream_t> Streams;
-  std::mutex StreamMutex;
+// class HIPStreamManager {
+// private:
+//   std::vector<hipStream_t> Streams;
+//   std::mutex StreamMutex;
 
 
-public:
-  hipStream_t createStream() {
-    std::lock_guard<std::mutex> lock(StreamMutex);
-    hipStream_t Stream;
-    hipStreamCreate(&Stream);
-    Streams.push_back(Stream);
-    return Stream;
-  }
+// public:
+//   hipStream_t createStream() {
+//     std::lock_guard<std::mutex> lock(StreamMutex);
+//     hipStream_t Stream;
+//     hipStreamCreate(&Stream);
+//     Streams.push_back(Stream);
+//     return Stream;
+//   }
 
-  void synchronizeAll() {
-    std::lock_guard<std::mutex> lock(StreamMutex);
-    for (auto Stream : Streams) {
-      hipStreamSynchronize(Stream);
-    }
-  }
+//   void synchronizeAll() {
+//     std::lock_guard<std::mutex> lock(StreamMutex);
+//     for (auto Stream : Streams) {
+//       hipStreamSynchronize(Stream);
+//     }
+//   }
 
-  void clearStreams() {
-    std::lock_guard<std::mutex> lock(StreamMutex);
-    for (auto Stream : Streams) {
-      hipStreamDestroy(Stream);
-    }
-    Streams.clear();
-  }
+//   void clearStreams() {
+//     std::lock_guard<std::mutex> lock(StreamMutex);
+//     for (auto Stream : Streams) {
+//       hipStreamDestroy(Stream);
+//     }
+//     Streams.clear();
+//   }
 
-  ~HIPStreamManager() {
-    for (auto Stream : Streams) {
-      hipStreamDestroy(Stream);
-    }
-  }
-};
+//   ~HIPStreamManager() {
+//     for (auto Stream : Streams) {
+//       hipStreamDestroy(Stream);
+//     }
+//   }
+// };
 
 #endif
 
@@ -242,6 +244,80 @@ private:
 #endif
 
 #ifdef DIOMP_ENABLE_HIP
+
+class StreamPool {
+private:
+    std::vector<hipStream_t> streams;
+    std::queue<hipStream_t> availableStreams;
+    std::mutex mutex;
+
+public:
+    hipStream_t getStream() {
+        std::lock_guard<std::mutex> lock(mutex);
+        if (availableStreams.empty()) {
+            hipStream_t newStream;
+            HIPCHECK(hipStreamCreate(&newStream));
+            streams.push_back(newStream);
+            return newStream;
+        }
+        hipStream_t stream = availableStreams.front();
+        availableStreams.pop();
+        return stream;
+    }
+
+    void returnStream(hipStream_t stream) {
+        std::lock_guard<std::mutex> lock(mutex);
+        availableStreams.push(stream);
+    }
+
+    ~StreamPool() {
+        for (auto stream : streams) {
+            hipStreamDestroy(stream);
+        }
+    }
+};
+
+
+class ActiveStreamTracker {
+private:
+    static constexpr int MAX_ACTIVE_STREAMS = 16;
+    hipStream_t activeStreams[MAX_ACTIVE_STREAMS];
+    int streamCount = 0;
+    std::mutex mutex;
+    StreamPool& streamPool; 
+
+public:
+    ActiveStreamTracker(StreamPool& pool) : streamPool(pool) {}
+
+    void addStream(hipStream_t stream) {
+        std::lock_guard<std::mutex> lock(mutex);
+        if (streamCount < MAX_ACTIVE_STREAMS) {
+            activeStreams[streamCount++] = stream;
+        } else {
+            syncBatch(MAX_ACTIVE_STREAMS/2);
+            activeStreams[streamCount++] = stream;
+        }
+    }
+
+    void syncBatch(int count) {
+        int syncCount = std::min(count, streamCount);
+        for (int i = 0; i < syncCount; i++) {
+            HIPCHECK(hipStreamSynchronize(activeStreams[i]));
+            streamPool.returnStream(activeStreams[i]);
+        }
+        for (int i = 0; i < streamCount - syncCount; i++) {
+            activeStreams[i] = activeStreams[i + syncCount];
+        }
+        streamCount -= syncCount;
+    }
+
+    void syncAll() {
+        syncBatch(streamCount);
+    }
+};
+
+
+
 // HIP device communicator class
 class DiOMPHIPCommunicator : public DiOMPDeviceCommunicator {
 public:
@@ -278,8 +354,9 @@ public:
 private:
 
   int LocalRank = 0;
-  // HIP specific members
-  HIPStreamManager StreamManager;
+  // // HIP specific members
+  StreamPool streamPool;
+  ActiveStreamTracker streamTracker;
   HIPMemoryManager* HipMem;
   static HIPMemoryManager* StaticHIPMem;
 

@@ -321,13 +321,11 @@ HIPMemoryManager::HIPMemoryManager(gex_TM_t GexTeam, int Mode,
 
   // Setup HIP IPC
   if (Mode != 1) {
+    HIPCHECK(hipSetDevice(LocalRank));  
     for (int DeviceID = 0; DeviceID < omp_get_num_devices(); DeviceID++) {
       if (DeviceID == LocalRank)
         continue;
-      HIPCHECK(hipSetDevice(LocalRank));  
       HIPCHECK(hipDeviceEnablePeerAccess(DeviceID, 0));
-      HIPCHECK(hipSetDevice(DeviceID));
-      HIPCHECK(hipDeviceEnablePeerAccess(LocalRank, 0));
     }
     // printf("LocalPtr %p\n", LocalPtr);
     hipIpcMemHandle_t IpcHandle;

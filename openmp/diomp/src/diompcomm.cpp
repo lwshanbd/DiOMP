@@ -14,6 +14,9 @@
 
 namespace diomp {
 
+extern "C" void omp_target_setup_diompallocator(int DeviceId, void *Alloc, void *Dealloc);
+extern "C" void omp_target_setup_default_allocator(int DeviceNum);
+
 // Base communicator implementations
 DiOMPCommunicator::DiOMPCommunicator()
     : Team(diompTeam), DevicesNum(1), Mem(MemManager.get()) {}
@@ -329,7 +332,9 @@ void diomp_device_dealloc() {
 
 HIPMemoryManager *DiOMPHIPCommunicator::StaticHIPMem = nullptr;
 
-DiOMPHIPCommunicator::DiOMPHIPCommunicator(int Mode) {
+
+
+DiOMPHIPCommunicator::DiOMPHIPCommunicator(int Mode) :streamTracker(streamPool) {
   HipMem = dynamic_cast<HIPMemoryManager *>(Mem);
   StaticHIPMem = HipMem;
   this->Mode = Mode;
@@ -355,6 +360,7 @@ DiOMPHIPCommunicator::DiOMPHIPCommunicator(int Mode) {
     RcclStreams = new hipStream_t[DevicesNum];
     RcclComms = new ncclComm_t[DevicesNum];
   }
+
 }
 
 DiOMPHIPCommunicator::~DiOMPHIPCommunicator() {
@@ -410,36 +416,34 @@ void DiOMPHIPCommunicator::initRCCL() {
 }
 
 void DiOMPHIPCommunicator::waitAllRMA() {
-  StreamManager.synchronizeAll();
-  StreamManager.clearStreams();
+  streamTracker.syncAll();
   gex_NBI_Wait(GEX_EC_ALL, 0);
 }
 
 void DiOMPHIPCommunicator::dget(void *Dest, int Node, void *Src, size_t Size,
                                  int DstId, int SrcId) {
+
   if (Mode != 1) {
     int TotalDevices = omp_get_num_devices();
-
-    gex_EP_t LocalEP = HipMem->getEP(0);
-    gex_EP_Index_t RemoteIdx = gex_EP_QueryIndex(LocalEP);
-    gex_TM_t CommTM = gex_TM_Pair(LocalEP, RemoteIdx);
-    void *SrcR = HipMem->convertLocaltoRemoteAddr(Src, Node, 0);
     if (omp_get_rank_num() / TotalDevices == Node / TotalDevices) {
       int SrcDevice = Node % TotalDevices;
       int DstDevice = LocalRank;
       void *DevicePtr = nullptr;
-      hipStream_t Stream = StreamManager.createStream();
-      // hipIpcMemHandle_t IpcHandle = HipMem->getIpcHandle(Node);
-      // HIPCHECK(hipIpcOpenMemHandle(&DevicePtr, IpcHandle,
-      //                               hipIpcMemLazyEnablePeerAccess));
       DevicePtr = HipMem->getPeerPtr(SrcDevice);
-      size_t Offset = HipMem->getOffset(SrcR, Node, 0);
+      size_t Offset = HipMem->getDeviceOffset(Src);
       char *RemotePtr = static_cast<char *>(DevicePtr) + Offset;
-      HIPCHECK(hipMemcpyPeerAsync(Dest, DstDevice, RemotePtr,
-                                    SrcDevice, Size, Stream));
-      // printf("hipMemcpyPeerAsync\n");
+
+      hipStream_t stream = streamPool.getStream();
+      streamPool.returnStream(stream);
+
+      HIPCHECK(hipMemcpyAsync(Dest, RemotePtr, Size, hipMemcpyDeviceToDevice, stream));
+      streamTracker.addStream(stream);
       return;
     }
+    void *SrcR = HipMem->convertLocaltoRemoteAddr(Src, Node, 0);
+    gex_EP_t LocalEP = HipMem->getEP(0);
+    gex_EP_Index_t RemoteIdx = gex_EP_QueryIndex(LocalEP);
+    gex_TM_t CommTM = gex_TM_Pair(LocalEP, RemoteIdx);
     auto Error = gex_RMA_GetNBI(CommTM, Dest, Node, SrcR, Size, GEX_FLAG_NONE);
     if (Error != 0) {
       THROW_ERROR("OpenMP Device Get Error! Error code is %d", Error);
@@ -463,37 +467,36 @@ void DiOMPHIPCommunicator::dget(void *Dest, int Node, void *Src, size_t Size,
 
 void DiOMPHIPCommunicator::dput(void *Dest, int Node, void *Src, size_t Size,
                                  int DstId, int SrcId) {
-  if (Mode != 1) {
-    int TotalDevices = omp_get_num_devices();
+  // if (Mode != 1) {
+  //   int TotalDevices = omp_get_num_devices();
 
-    gex_EP_t LocalEP = HipMem->getEP(0);  
-    gex_EP_Index_t RemoteIdx = gex_EP_QueryIndex(LocalEP);
-    gex_TM_t CommTM = gex_TM_Pair(LocalEP, RemoteIdx);
+  //   gex_EP_t LocalEP = HipMem->getEP(0);  
+  //   gex_EP_Index_t RemoteIdx = gex_EP_QueryIndex(LocalEP);
+  //   gex_TM_t CommTM = gex_TM_Pair(LocalEP, RemoteIdx);
 
-    void *SrcR = HipMem->convertLocaltoRemoteAddr(Src, Node, 0);
-    if (omp_get_rank_num() / TotalDevices == Node / TotalDevices) {
-      int SrcDevice = Node % TotalDevices;
-      int DstDevice = LocalRank;
+  //   void *SrcR = HipMem->convertLocaltoRemoteAddr(Src, Node, 0);
+  //   if (omp_get_rank_num() / TotalDevices == Node / TotalDevices) {
+  //     int SrcDevice = Node % TotalDevices;
+  //     int DstDevice = LocalRank;
 
-      hipStream_t Stream = StreamManager.createStream();
-
-      hipIpcMemHandle_t IpcHandle = HipMem->getIpcHandle(Node);
-      void *DevicePtr = nullptr;
-      HIPCHECK(hipIpcOpenMemHandle(&DevicePtr, IpcHandle,
-                                    hipIpcMemLazyEnablePeerAccess));
-      size_t Offset = HipMem->getOffset(SrcR, Node, 0);
-      char *RemotePtr = static_cast<char *>(DevicePtr) + Offset;
-      HIPCHECK(hipMemcpyPeerAsync(RemotePtr, DstDevice, Src,
-                                    SrcDevice, Size, Stream));
-      // printf("hipMemcpyPeerAsync\n");
-      return;
-    } 
-    auto Error = gex_RMA_GetNBI(CommTM, Dest, Node, SrcR, Size, GEX_FLAG_NONE);
-    if (Error != 0) {
-      THROW_ERROR("OpenMP Device Get Error! Error code is %d", Error);
-    }
-    return;
-  } 
+  //     // hipStream_t Stream = StreamManager.createStream();
+  //     hipStream_t Stream = Streams[SrcDevice];
+  //     hipIpcMemHandle_t IpcHandle = HipMem->getIpcHandle(Node);
+  //     void *DevicePtr = nullptr;
+  //     HIPCHECK(hipIpcOpenMemHandle(&DevicePtr, IpcHandle,
+  //                                   hipIpcMemLazyEnablePeerAccess));
+  //     size_t Offset = HipMem->getOffset(SrcR, Node, 0);
+  //     char *RemotePtr = static_cast<char *>(DevicePtr) + Offset;
+  //     HIPCHECK(hipMemcpyPeerAsync(RemotePtr, DstDevice, Src,
+  //                                   SrcDevice, Size, Stream));
+  //     return;
+  //   } 
+  //   auto Error = gex_RMA_GetNBI(CommTM, Dest, Node, SrcR, Size, GEX_FLAG_NONE);
+  //   if (Error != 0) {
+  //     THROW_ERROR("OpenMP Device Get Error! Error code is %d", Error);
+  //   }
+  //   return;
+  // } 
   gex_EP_t LocalEP = HipMem->getEP(SrcId);
   gex_EP_t RemoteEP = HipMem->getEP(DstId);
 
@@ -589,6 +592,10 @@ void diomp_device_dealloc() {
   DiOMPHIPCommunicator::hip_device_dealloc();
   return;
 }
+
+
+
+
 
 #endif // DIOMP_ENABLE_HIP
 
