@@ -38,86 +38,7 @@ extern std::unique_ptr<diomp::MemoryManager> MemManager;
 
 namespace diomp {
 
-#ifdef DIOMP_ENABLE_CUDA\
 
-class CUDAStreamManager {
-private:
-  std::vector<cudaStream_t> Streams;
-  std::mutex StreamMutex;
-
-public:
-  cudaStream_t createStream() {
-    std::lock_guard<std::mutex> lock(StreamMutex);
-    cudaStream_t Stream;
-    cudaStreamCreate(&Stream);
-    Streams.push_back(Stream);
-    return Stream;
-  }
-
-  void synchronizeAll() {
-    std::lock_guard<std::mutex> lock(StreamMutex);
-    for (auto Stream : Streams) {
-      cudaStreamSynchronize(Stream);
-    }
-  }
-
-  void clearStreams() {
-    std::lock_guard<std::mutex> lock(StreamMutex);
-    for (auto Stream : Streams) {
-      cudaStreamDestroy(Stream);
-    }
-    Streams.clear();
-  }
-
-  ~CUDAStreamManager() {
-    for (auto Stream : Streams) {
-      cudaStreamDestroy(Stream);
-    }
-  }
-};
-
-#endif
-
-#ifdef DIOMP_ENABLE_HIP
-
-// class HIPStreamManager {
-// private:
-//   std::vector<hipStream_t> Streams;
-//   std::mutex StreamMutex;
-
-
-// public:
-//   hipStream_t createStream() {
-//     std::lock_guard<std::mutex> lock(StreamMutex);
-//     hipStream_t Stream;
-//     hipStreamCreate(&Stream);
-//     Streams.push_back(Stream);
-//     return Stream;
-//   }
-
-//   void synchronizeAll() {
-//     std::lock_guard<std::mutex> lock(StreamMutex);
-//     for (auto Stream : Streams) {
-//       hipStreamSynchronize(Stream);
-//     }
-//   }
-
-//   void clearStreams() {
-//     std::lock_guard<std::mutex> lock(StreamMutex);
-//     for (auto Stream : Streams) {
-//       hipStreamDestroy(Stream);
-//     }
-//     Streams.clear();
-//   }
-
-//   ~HIPStreamManager() {
-//     for (auto Stream : Streams) {
-//       hipStreamDestroy(Stream);
-//     }
-//   }
-// };
-
-#endif
 
 // Base communicator class
 class DiOMPCommunicator {
@@ -193,6 +114,79 @@ protected:
 };
 
 #ifdef DIOMP_ENABLE_CUDA
+
+class CUDAStreamPool {
+private:
+    std::vector<cudaStream_t> streams;
+    std::queue<cudaStream_t> availableStreams;
+    std::mutex mutex;
+
+public:
+    cudaStream_t getStream() {
+        std::lock_guard<std::mutex> lock(mutex);
+        if (availableStreams.empty()) {
+            cudaStream_t newStream;
+            CUDACHECK(cudaStreamCreate(&newStream));
+            streams.push_back(newStream);
+            return newStream;
+        }
+        cudaStream_t stream = availableStreams.front();
+        availableStreams.pop();
+        return stream;
+    }
+
+    void returnStream(cudaStream_t stream) {
+        std::lock_guard<std::mutex> lock(mutex);
+        availableStreams.push(stream);
+    }
+
+    ~CUDAStreamPool() {
+        for (auto stream : streams) {
+            CUDACHECK(cudaStreamDestroy(stream));
+        }
+    }
+};
+
+
+class ActiveStreamTracker {
+private:
+    static constexpr int MAX_ACTIVE_STREAMS = 16;
+    cudaStream_t activeStreams[MAX_ACTIVE_STREAMS];
+    int streamCount = 0;
+    std::mutex mutex;
+    CUDAStreamPool& StreamPool; 
+
+public:
+    ActiveStreamTracker(CUDAStreamPool& pool) : StreamPool(pool) {}
+
+    void addStream(cudaStream_t stream) {
+        std::lock_guard<std::mutex> lock(mutex);
+        if (streamCount < MAX_ACTIVE_STREAMS) {
+            activeStreams[streamCount++] = stream;
+        } else {
+            syncBatch(MAX_ACTIVE_STREAMS/2);
+            activeStreams[streamCount++] = stream;
+        }
+    }
+
+    void syncBatch(int count) {
+        int syncCount = std::min(count, streamCount);
+        for (int i = 0; i < syncCount; i++) {
+            CUDACHECK(cudaStreamSynchronize(activeStreams[i]));
+            StreamPool.returnStream(activeStreams[i]);
+        }
+        for (int i = 0; i < streamCount - syncCount; i++) {
+            activeStreams[i] = activeStreams[i + syncCount];
+        }
+        streamCount -= syncCount;
+    }
+
+    void syncAll() {
+        syncBatch(streamCount);
+    }
+};
+
+
 // CUDA device communicator class
 class DiOMPCUDACommunicator : public DiOMPDeviceCommunicator {
 public:
@@ -231,7 +225,8 @@ private:
 
   int LocalRank = 0;
 
-  CUDAStreamManager StreamManager;
+  CUDAStreamPool StreamPool;
+  ActiveStreamTracker StreamTracker;
   CUDAMemoryManager* CudaMem;
   static CUDAMemoryManager* StaticCudaMem;
 
@@ -245,7 +240,7 @@ private:
 
 #ifdef DIOMP_ENABLE_HIP
 
-class StreamPool {
+class HIPStreamPool {
 private:
     std::vector<hipStream_t> streams;
     std::queue<hipStream_t> availableStreams;
@@ -270,7 +265,7 @@ public:
         availableStreams.push(stream);
     }
 
-    ~StreamPool() {
+    ~HIPStreamPool() {
         for (auto stream : streams) {
             hipStreamDestroy(stream);
         }
@@ -284,10 +279,10 @@ private:
     hipStream_t activeStreams[MAX_ACTIVE_STREAMS];
     int streamCount = 0;
     std::mutex mutex;
-    StreamPool& streamPool; 
+    HIPStreamPool& StreamPool; 
 
 public:
-    ActiveStreamTracker(StreamPool& pool) : streamPool(pool) {}
+    ActiveStreamTracker(HIPStreamPool& pool) : StreamPool(pool) {}
 
     void addStream(hipStream_t stream) {
         std::lock_guard<std::mutex> lock(mutex);
@@ -303,7 +298,7 @@ public:
         int syncCount = std::min(count, streamCount);
         for (int i = 0; i < syncCount; i++) {
             HIPCHECK(hipStreamSynchronize(activeStreams[i]));
-            streamPool.returnStream(activeStreams[i]);
+            StreamPool.returnStream(activeStreams[i]);
         }
         for (int i = 0; i < streamCount - syncCount; i++) {
             activeStreams[i] = activeStreams[i + syncCount];
@@ -354,9 +349,8 @@ public:
 private:
 
   int LocalRank = 0;
-  // // HIP specific members
-  StreamPool streamPool;
-  ActiveStreamTracker streamTracker;
+  HIPStreamPool StreamPool;
+  ActiveStreamTracker StreamTracker;
   HIPMemoryManager* HipMem;
   static HIPMemoryManager* StaticHIPMem;
 

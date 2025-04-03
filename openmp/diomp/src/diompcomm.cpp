@@ -74,7 +74,7 @@ DiOMPDeviceCommunicator::~DiOMPDeviceCommunicator() = default;
 // CUDA communicator implementations
 CUDAMemoryManager *DiOMPCUDACommunicator::StaticCudaMem = nullptr;
 
-DiOMPCUDACommunicator::DiOMPCUDACommunicator(int Mode) {
+DiOMPCUDACommunicator::DiOMPCUDACommunicator(int Mode)  : StreamTracker(StreamPool) {
   CudaMem = dynamic_cast<CUDAMemoryManager *>(Mem);
   StaticCudaMem = CudaMem;
   this->Mode = Mode;
@@ -159,32 +159,31 @@ void DiOMPCUDACommunicator::waitAllRMA() {
   gex_NBI_Wait(GEX_EC_ALL, 0);
 }
 
-void DiOMPCUDACommunicator::dget(void *Dest, int Node, void *Src, size_t Size,
+void DiOMPCUDACommunicator::dget(void *Dst, int Node, void *Src, size_t Size,
                                  int DstId, int SrcId) {
   if (Mode != 1) {
     int TotalDevices = omp_get_num_devices();
 
-    gex_EP_t LocalEP = CudaMem->getEP(0);
-    gex_EP_Index_t RemoteIdx = gex_EP_QueryIndex(LocalEP);
-    gex_TM_t CommTM = gex_TM_Pair(LocalEP, RemoteIdx);
-    void *SrcR = CudaMem->convertLocaltoRemoteAddr(Src, Node, 0);
     if (omp_get_rank_num() / TotalDevices == Node / TotalDevices) {
       int SrcDevice = Node % TotalDevices;
       int DstDevice = LocalRank;
       void *DevicePtr = nullptr;
-      cudaStream_t Stream = StreamManager.createStream();
-      // cudaIpcMemHandle_t IpcHandle = CudaMem->getIpcHandle(Node);
-      // CUDACHECK(cudaIpcOpenMemHandle(&DevicePtr, IpcHandle,
-      //                                cudaIpcMemLazyEnablePeerAccess));
       DevicePtr = CudaMem->getPeerPtr(SrcDevice);
-      size_t Offset = CudaMem->getOffset(SrcR, Node, 0);
+      size_t Offset = CudaMem->getDeviceOffset(Src);
       char *RemotePtr = static_cast<char *>(DevicePtr) + Offset;
-      CUDACHECK(cudaMemcpyPeerAsync(Dest, DstDevice, RemotePtr,
+      cudaStream_t Stream = StreamPool.getStream(); 
+      CUDACHECK(cudaMemcpyPeerAsync(Dst, DstDevice, RemotePtr,
                                     SrcDevice, Size, Stream));
-      // printf("cudaMemcpyPeerAsync\n");
+      StreamTracker.addStream(Stream);
       return;
     }
-    auto Error = gex_RMA_GetNBI(CommTM, Dest, Node, SrcR, Size, GEX_FLAG_NONE);
+    void *SrcR = CudaMem->convertLocaltoRemoteAddr(Src, Node, SrcId);
+
+    gex_EP_t LocalEP = CudaMem->getEP(0);
+    gex_EP_Index_t RemoteIdx = gex_EP_QueryIndex(LocalEP);
+    gex_TM_t CommTM = gex_TM_Pair(LocalEP, RemoteIdx);
+
+    auto Error = gex_RMA_GetNBI(CommTM, Dst, Node, SrcR, Size, GEX_FLAG_NONE);
     if (Error != 0) {
       THROW_ERROR("OpenMP Device Get Error! Error code is %d", Error);
     }
@@ -197,7 +196,7 @@ void DiOMPCUDACommunicator::dget(void *Dest, int Node, void *Src, size_t Size,
   gex_TM_t CommTM = gex_TM_Pair(LocalEP, RemoteIdx);
 
   void *SrcR = CudaMem->convertLocaltoRemoteAddr(Src, Node, SrcId);
-  auto Error = gex_RMA_GetNBI(CommTM, Dest, Node, SrcR, Size, GEX_FLAG_NONE);
+  auto Error = gex_RMA_GetNBI(CommTM, Dst, Node, SrcR, Size, GEX_FLAG_NONE);
   if (Error != 0) {
     THROW_ERROR("OpenMP Device Get Error! Error code is %d", Error);
   }
@@ -209,37 +208,45 @@ void DiOMPCUDACommunicator::dput(void *Dst, int Node, void *Src, size_t Size,
                                  int DstId, int SrcId) {
   if (Mode != 1) {
     int TotalDevices = omp_get_num_devices();
+    
+    if (omp_get_rank_num() / TotalDevices == Node / TotalDevices) {
+      int SrcDevice = LocalRank;
+      int DstDevice = Node % TotalDevices;
 
-    gex_EP_t LocalEP = CudaMem->getEP(0);
+      cudaStream_t Stream = StreamPool.getStream();
+      void *DevicePtr = nullptr;
+      DevicePtr = CudaMem->getPeerPtr(DstDevice);
+      size_t Offset = CudaMem->getDeviceOffset(Dst);
+      char *RemotePtr = static_cast<char *>(DevicePtr) + Offset;
+      CUDACHECK(cudaMemcpyPeerAsync(RemotePtr, DstDevice, Src,
+                                    SrcDevice, Size, Stream));
+      StreamTracker.addStream(Stream);
+      return;
+    } 
+    void *DstR = CudaMem->convertLocaltoRemoteAddr(Dst, Node, 0);
+
+    gex_EP_t LocalEP = CudaMem->getEP(0);  
     gex_EP_Index_t RemoteIdx = gex_EP_QueryIndex(LocalEP);
     gex_TM_t CommTM = gex_TM_Pair(LocalEP, RemoteIdx);
 
-    void *SrcR = CudaMem->convertLocaltoRemoteAddr(Src, Node, 0);
-    if (omp_get_rank_num() / TotalDevices == Node / TotalDevices) {
-      int SrcDevice = Node % TotalDevices;
-      int DstDevice = LocalRank;
-
-      cudaStream_t Stream = StreamManager.createStream();
-
-      cudaIpcMemHandle_t IpcHandle = CudaMem->getIpcHandle(Node);
-      void *DevicePtr = nullptr;
-      CUDACHECK(cudaIpcOpenMemHandle(&DevicePtr, IpcHandle,
-                                     cudaIpcMemLazyEnablePeerAccess));
+    auto Error = gex_RMA_GetNBI(CommTM, DstR, Node, Src, Size, GEX_FLAG_NONE);
+    if (Error != 0) {
+      THROW_ERROR("OpenMP Device Get Error! Error code is %d", Error);
     }
-  }
-
+    return;
+  } 
   gex_EP_t LocalEP = CudaMem->getEP(SrcId);
   gex_EP_t RemoteEP = CudaMem->getEP(DstId);
 
   gex_EP_Index_t RemoteIdx = gex_EP_QueryIndex(RemoteEP);
-  gex_TM_t CommTM = gex_TM_Pair(LocalEP, RemoteIdx);
+  gex_TM_t CommTM = gex_TM_Pair(LocalEP, RemoteIdx);    
 
   void *DstR = CudaMem->convertLocaltoRemoteAddr(Dst, Node, DstId);
   auto Error =
       gex_RMA_PutNBI(CommTM, Node, DstR, Src, Size, GEX_EVENT_DEFER, GEX_FLAG_NONE);
   if (Error != 0) {
     THROW_ERROR("OpenMP Device Put Error! Error code is %d", Error);
-  }
+  } 
 
   return;
 }
@@ -334,7 +341,7 @@ HIPMemoryManager *DiOMPHIPCommunicator::StaticHIPMem = nullptr;
 
 
 
-DiOMPHIPCommunicator::DiOMPHIPCommunicator(int Mode) :streamTracker(streamPool) {
+DiOMPHIPCommunicator::DiOMPHIPCommunicator(int Mode) : StreamTracker(StreamPool) {
   HipMem = dynamic_cast<HIPMemoryManager *>(Mem);
   StaticHIPMem = HipMem;
   this->Mode = Mode;
@@ -416,7 +423,7 @@ void DiOMPHIPCommunicator::initRCCL() {
 }
 
 void DiOMPHIPCommunicator::waitAllRMA() {
-  streamTracker.syncAll();
+  StreamTracker.syncAll();
   gex_NBI_Wait(GEX_EC_ALL, 0);
 }
 
@@ -433,14 +440,13 @@ void DiOMPHIPCommunicator::dget(void *Dest, int Node, void *Src, size_t Size,
       size_t Offset = HipMem->getDeviceOffset(Src);
       char *RemotePtr = static_cast<char *>(DevicePtr) + Offset;
 
-      hipStream_t stream = streamPool.getStream();
-      streamPool.returnStream(stream);
-
-      HIPCHECK(hipMemcpyAsync(Dest, RemotePtr, Size, hipMemcpyDeviceToDevice, stream));
-      streamTracker.addStream(stream);
+      hipStream_t Stream = StreamPool.getStream();
+      HIPCHECK(hipMemcpyAsync(Dest, RemotePtr, Size, hipMemcpyDeviceToDevice, Stream));
+      StreamTracker.addStream(Stream);
       return;
     }
     void *SrcR = HipMem->convertLocaltoRemoteAddr(Src, Node, 0);
+
     gex_EP_t LocalEP = HipMem->getEP(0);
     gex_EP_Index_t RemoteIdx = gex_EP_QueryIndex(LocalEP);
     gex_TM_t CommTM = gex_TM_Pair(LocalEP, RemoteIdx);
@@ -465,45 +471,44 @@ void DiOMPHIPCommunicator::dget(void *Dest, int Node, void *Src, size_t Size,
   return;
 }
 
-void DiOMPHIPCommunicator::dput(void *Dest, int Node, void *Src, size_t Size,
+void DiOMPHIPCommunicator::dput(void *Dst, int Node, void *Src, size_t Size,
                                  int DstId, int SrcId) {
-  // if (Mode != 1) {
-  //   int TotalDevices = omp_get_num_devices();
+  if (Mode != 1) {
+    int TotalDevices = omp_get_num_devices();
+    
+    if (omp_get_rank_num() / TotalDevices == Node / TotalDevices) {
+      int SrcDevice = LocalRank;
+      int DstDevice = Node % TotalDevices;
 
-  //   gex_EP_t LocalEP = HipMem->getEP(0);  
-  //   gex_EP_Index_t RemoteIdx = gex_EP_QueryIndex(LocalEP);
-  //   gex_TM_t CommTM = gex_TM_Pair(LocalEP, RemoteIdx);
+      hipStream_t Stream = StreamPool.getStream();
+      void *DevicePtr = nullptr;
+      DevicePtr = HipMem->getPeerPtr(DstDevice);
+      size_t Offset = HipMem->getDeviceOffset(Dst);
+      char *RemotePtr = static_cast<char *>(DevicePtr) + Offset;
+      HIPCHECK(hipMemcpyPeerAsync(RemotePtr, DstDevice, Src,
+                                    SrcDevice, Size, Stream));
+      StreamTracker.addStream(Stream);
+      return;
+    }
+    void *DstR = HipMem->convertLocaltoRemoteAddr(Dst, Node, 0);
 
-  //   void *SrcR = HipMem->convertLocaltoRemoteAddr(Src, Node, 0);
-  //   if (omp_get_rank_num() / TotalDevices == Node / TotalDevices) {
-  //     int SrcDevice = Node % TotalDevices;
-  //     int DstDevice = LocalRank;
+    gex_EP_t LocalEP = HipMem->getEP(0);  
+    gex_EP_Index_t RemoteIdx = gex_EP_QueryIndex(LocalEP);
+    gex_TM_t CommTM = gex_TM_Pair(LocalEP, RemoteIdx);
 
-  //     // hipStream_t Stream = StreamManager.createStream();
-  //     hipStream_t Stream = Streams[SrcDevice];
-  //     hipIpcMemHandle_t IpcHandle = HipMem->getIpcHandle(Node);
-  //     void *DevicePtr = nullptr;
-  //     HIPCHECK(hipIpcOpenMemHandle(&DevicePtr, IpcHandle,
-  //                                   hipIpcMemLazyEnablePeerAccess));
-  //     size_t Offset = HipMem->getOffset(SrcR, Node, 0);
-  //     char *RemotePtr = static_cast<char *>(DevicePtr) + Offset;
-  //     HIPCHECK(hipMemcpyPeerAsync(RemotePtr, DstDevice, Src,
-  //                                   SrcDevice, Size, Stream));
-  //     return;
-  //   } 
-  //   auto Error = gex_RMA_GetNBI(CommTM, Dest, Node, SrcR, Size, GEX_FLAG_NONE);
-  //   if (Error != 0) {
-  //     THROW_ERROR("OpenMP Device Get Error! Error code is %d", Error);
-  //   }
-  //   return;
-  // } 
+    auto Error = gex_RMA_GetNBI(CommTM, DstR, Node, Src, Size, GEX_FLAG_NONE);
+    if (Error != 0) {
+      THROW_ERROR("OpenMP Device Get Error! Error code is %d", Error);
+    }
+    return;
+  } 
   gex_EP_t LocalEP = HipMem->getEP(SrcId);
   gex_EP_t RemoteEP = HipMem->getEP(DstId);
 
   gex_EP_Index_t RemoteIdx = gex_EP_QueryIndex(RemoteEP);
   gex_TM_t CommTM = gex_TM_Pair(LocalEP, RemoteIdx);    
 
-  void *DstR = HipMem->convertLocaltoRemoteAddr(Dest, Node, DstId);
+  void *DstR = HipMem->convertLocaltoRemoteAddr(Dst, Node, DstId);
   auto Error =
       gex_RMA_PutNBI(CommTM, Node, DstR, Src, Size, GEX_EVENT_DEFER, GEX_FLAG_NONE);
   if (Error != 0) {
