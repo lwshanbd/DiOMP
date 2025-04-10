@@ -126,13 +126,11 @@ CUDAMemoryManager::CUDAMemoryManager(gex_TM_t GexTeam, int Mode,
 
   // Setup CUDA IPC
   if (Mode != 1) {
+    CUDACHECK(cudaSetDevice(LocalRank));
     for (int DeviceID = 0; DeviceID < omp_get_num_devices(); DeviceID++) {
       if (DeviceID == LocalRank)
         continue;
-      CUDACHECK(cudaSetDevice(LocalRank));
-      cudaDeviceEnablePeerAccess(DeviceID, 0);
-      CUDACHECK(cudaSetDevice(DeviceID));
-      cudaDeviceEnablePeerAccess(LocalRank, 0);
+      CUDACHECK(cudaDeviceEnablePeerAccess(DeviceID, 0));
     }
 
     cudaIpcMemHandle_t IpcHandle;
@@ -327,7 +325,7 @@ HIPMemoryManager::HIPMemoryManager(gex_TM_t GexTeam, int Mode,
         continue;
       HIPCHECK(hipDeviceEnablePeerAccess(DeviceID, 0));
     }
-    // printf("LocalPtr %p\n", LocalPtr);
+    
     hipIpcMemHandle_t IpcHandle;
     HIPCHECK(hipIpcGetMemHandle(&IpcHandle, LocalPtr));
     IpcHandles.resize(RanksNum);

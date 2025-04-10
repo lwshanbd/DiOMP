@@ -2216,6 +2216,9 @@ struct AMDGPUDeviceTy : public GenericDeviceTy, AMDGenericDeviceTy {
       return OFFLOAD_SUCCESS;
 
     AMDGPUMemoryPoolTy *MemoryPool = nullptr;
+    if (UseDiOMPAllocator) {
+      return OFFLOAD_SUCCESS;
+    }
     switch (Kind) {
     case TARGET_ALLOC_DEFAULT:
     case TARGET_ALLOC_DEVICE:

@@ -350,10 +350,13 @@ private:
 
   int LocalRank = 0;
   HIPStreamPool StreamPool;
+  std::vector<gex_Event_t> GexEvents;
   ActiveStreamTracker StreamTracker;
   HIPMemoryManager* HipMem;
   static HIPMemoryManager* StaticHIPMem;
-
+  std::vector<hipEvent_t> EventPool;
+  std::vector<hipEvent_t> PendingEvents; 
+  std::mutex EventMutex;
   ncclComm_t RcclComm;
   hipStream_t RcclStream;
   // Per process multiple devices
