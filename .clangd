@@ -2,3 +2,9 @@ CompileFlags:
     Add:
         - "-I/home/l1065028/gasnet-arm-cuda/include/ibv-conduit/"
         - "-I/home/l1065028/gasnet-arm-cuda/include/"
+        # For Perlmutter
+        - "-I/global/cfs/cdirs/xpress/baodi/software/gasnet-gpu/include"
+        - "-I/global/cfs/cdirs/xpress/baodi/software/gasnet-gpu/include/ofi-conduit/"
+        # For Tioga
+        - "-I/p/lustre2/shan4/softwares/gasnet-amd/include"
+        - "-I/p/lustre2/shan4/softwares/gasnet-amd/include/ofi-conduit/"
