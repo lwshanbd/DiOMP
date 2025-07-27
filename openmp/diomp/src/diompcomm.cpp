@@ -421,7 +421,7 @@ void DiOMPHIPCommunicator::initRCCL() {
     }
     RCCLCHECK(ncclGroupEnd());
   }
-}
+  }
 
 void DiOMPHIPCommunicator::waitAllRMA() {
   while (!PendingEvents.empty() || !GexEvents.empty()) {
@@ -436,8 +436,9 @@ void DiOMPHIPCommunicator::waitAllRMA() {
         THROW_ERROR("HIP event query failed with error: %d", status);
       }
     }
+    gasnet_AMPoll();
     for (auto it = GexEvents.begin(); it != GexEvents.end();) {
-      if (gex_Event_Test(*it)) {
+      if (0 == gex_Event_Test(*it)) {
         it = GexEvents.erase(it);
       } else {
         ++it;
@@ -491,32 +492,31 @@ void DiOMPHIPCommunicator::dget(void *Dest, int Node, void *Src, size_t Size,
   gex_TM_t CommTM = gex_TM_Pair(LocalEP, RemoteIdx);
 
   void *SrcR = HipMem->convertLocaltoRemoteAddr(Src, Node, SrcId);
-  auto Error = gex_RMA_GetNBI(CommTM, Dest, Node, SrcR, Size, GEX_FLAG_NONE);
-  if (Error != 0) {
-    THROW_ERROR("OpenMP Device Get Error! Error code is %d", Error);
-  }
-
+  GexEvents.push_back(
+    gex_RMA_GetNB(CommTM, Dest, Node, SrcR, Size, GEX_FLAG_NONE));
   return;
 }
 
 void DiOMPHIPCommunicator::dput(void *Dst, int Node, void *Src, size_t Size,
                                 int DstId, int SrcId) {
   if (Mode != 1) {
-    return;
     int TotalDevices = omp_get_num_devices();
 
     if (omp_get_rank_num() / TotalDevices == Node / TotalDevices) {
       int SrcDevice = LocalRank;
       int DstDevice = Node % TotalDevices;
-
-      hipStream_t Stream = StreamPool.getStream();
       void *DevicePtr = nullptr;
       DevicePtr = HipMem->getPeerPtr(DstDevice);
       size_t Offset = HipMem->getDeviceOffset(Dst);
       char *RemotePtr = static_cast<char *>(DevicePtr) + Offset;
+      hipEvent_t event;
+      HIPCHECK(hipEventCreate(&event));
+      hipStream_t Stream = StreamPool.getStream();
       HIPCHECK(hipMemcpyAsync(RemotePtr, Src, Size, hipMemcpyDeviceToDevice,
                               Stream));
-      StreamTracker.addStream(Stream);
+      HIPCHECK(hipEventRecord(event, Stream));
+      PendingEvents.push_back(event);
+      StreamPool.returnStream(Stream);
       return;
     }
     void *DstR = HipMem->convertLocaltoRemoteAddr(Dst, Node, 0);
@@ -524,12 +524,8 @@ void DiOMPHIPCommunicator::dput(void *Dst, int Node, void *Src, size_t Size,
     gex_EP_t LocalEP = HipMem->getEP(0);
     gex_EP_Index_t RemoteIdx = gex_EP_QueryIndex(LocalEP);
     gex_TM_t CommTM = gex_TM_Pair(LocalEP, RemoteIdx);
-
-    auto Error = gex_RMA_PutNBI(CommTM, Node, DstR, Src, Size, GEX_EVENT_DEFER,
-                                GEX_FLAG_NONE);
-    if (Error != 0) {
-      THROW_ERROR("OpenMP Device Get Error! Error code is %d", Error);
-    }
+    GexEvents.push_back(
+      gex_RMA_PutNB(CommTM, Node, DstR, Src, Size, GEX_EVENT_DEFER, GEX_FLAG_NONE));
     return;
   }
   gex_EP_t LocalEP = HipMem->getEP(SrcId);
