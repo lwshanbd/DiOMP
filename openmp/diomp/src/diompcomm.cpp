@@ -11,6 +11,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "diompcomm.h"
+#include "gasnet.h"
 
 namespace diomp {
 
@@ -154,8 +155,7 @@ void DiOMPCUDACommunicator::initNCCL() {
 }
 
 void DiOMPCUDACommunicator::waitAllRMA() {
-  StreamManager.synchronizeAll();
-  StreamManager.clearStreams();
+  StreamTracker.syncAll();
   gex_NBI_Wait(GEX_EC_ALL, 0);
 }
 
@@ -171,9 +171,10 @@ void DiOMPCUDACommunicator::dget(void *Dst, int Node, void *Src, size_t Size,
       DevicePtr = CudaMem->getPeerPtr(SrcDevice);
       size_t Offset = CudaMem->getDeviceOffset(Src);
       char *RemotePtr = static_cast<char *>(DevicePtr) + Offset;
-      cudaStream_t Stream = StreamPool.getStream(); 
-      CUDACHECK(cudaMemcpyPeerAsync(Dst, DstDevice, RemotePtr,
-                                    SrcDevice, Size, Stream));
+      cudaStream_t Stream = StreamPool.getStream();
+      CUDACHECK(cudaMemcpyAsync(Dst, RemotePtr, Size, cudaMemcpyDeviceToDevice, Stream));
+      // CUDACHECK(cudaMemcpyPeerAsync(Dst, DstDevice, RemotePtr,
+      //                               SrcDevice, Size, Stream));
       StreamTracker.addStream(Stream);
       return;
     }
@@ -229,7 +230,7 @@ void DiOMPCUDACommunicator::dput(void *Dst, int Node, void *Src, size_t Size,
     gex_EP_Index_t RemoteIdx = gex_EP_QueryIndex(LocalEP);
     gex_TM_t CommTM = gex_TM_Pair(LocalEP, RemoteIdx);
 
-    auto Error = gex_RMA_GetNBI(CommTM, DstR, Node, Src, Size, GEX_FLAG_NONE);
+    auto Error = gex_RMA_PutNBI(CommTM, Node, DstR, Src, Size, GEX_EVENT_DEFER, GEX_FLAG_NONE);
     if (Error != 0) {
       THROW_ERROR("OpenMP Device Get Error! Error code is %d", Error);
     }

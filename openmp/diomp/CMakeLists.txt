@@ -50,7 +50,8 @@ elseif(GASNET_CONDUIT_OFI)
   set(LIBFABRIC_LIB "${OFI_ROOT}/lib64")
   set(LIBPMI_LIB "${PMI_ROOT}/lib")
   set(LIBMPI_LIB "${MPI_ROOT}/lib")
-  link_directories(${LIBFABRIC_LIB} ${LIBPMI_LIB} ${LIBMPI_LIB} ${GASNET_LIB} /opt/cray/pe/mpich/8.1.31/ofi/crayclang/18.0/lib /opt/cray/pe/mpich/8.1.31/gtl/lib LLVMSupport)
+  set(LIBMPI_LIB_GTL "${MPI_ROOT}/../../gtl/lib")
+  link_directories(${LIBFABRIC_LIB} ${LIBPMI_LIB} ${LIBMPI_LIB} ${LIBMPI_LIB_GTL} ${GASNET_LIB} /opt/cray/pe/mpich/8.1.31/ofi/crayclang/18.0/lib /opt/cray/pe/mpich/8.1.31/gtl/lib LLVMSupport)
   message("Using OFI")
 endif()
 include_directories(${GASNET_CORE_INCLUDE} ${GASNET_INCLUDE} ${MPI_INCLUDE})
@@ -59,6 +60,12 @@ if(DEFINED OPENMP_HWLOC_LIB)
   set(HWLOC_LIB "${OPENMP_HWLOC_LIB}")
 else()
   set(HWLOC_LIB "/lustre/software/hwloc/2.8.0/lib")
+endif()
+
+if(DEFINED OPENMP_LIBFABRIC_LIB)
+  set(LIBFABRIC_LIB "${OPENMP_LIBFABRIC_LIB}")
+else()
+  set(LIBFABRIC_LIB "/opt/cray/libfabric/1.20.1/lib64")
 endif()
 
 # Device support options
@@ -92,7 +99,6 @@ if(OPENMP_DIOMP_ENABLE_CUDA)
   include_directories(${CUDA_HOME}/include ${NCCL_HOME}/include)
   link_directories(${CUDA_HOME}/lib64 ${NCCL_HOME}/lib)
 endif()
-
 
 # HIP support 
 option(OPENMP_DIOMP_ENABLE_HIP "Enable HIP support in DiOMP" OFF)
@@ -155,6 +161,7 @@ set(DIOMP_LIBS
   $<$<BOOL:${GASNET_CONDUIT_OFI}>:-lgasnet-ofi-par>
   $<$<BOOL:${GASNET_CONDUIT_OFI}>:-lhugetlbfs>
   $<$<BOOL:${GASNET_CONDUIT_OFI}>:-lfabric>
+  $<$<BOOL:${GASNET_CONDUIT_OFI}>:-L${LIBFABRIC_LIB}>
   $<$<BOOL:${GASNET_CONDUIT_OFI}>:-lpmi>
   $<$<BOOL:${GASNET_CONDUIT_OFI}>:--offload-arch=sm_80>
   # CUDA libraries
