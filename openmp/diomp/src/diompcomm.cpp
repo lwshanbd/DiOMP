@@ -15,7 +15,8 @@
 
 namespace diomp {
 
-extern "C" void omp_target_setup_diompallocator(int DeviceId, void *Alloc, void *Dealloc);
+extern "C" void omp_target_setup_diompallocator(int DeviceId, void *Alloc,
+                                                void *Dealloc);
 extern "C" void omp_target_setup_default_allocator(int DeviceNum);
 
 // Base communicator implementations
@@ -42,7 +43,7 @@ void DiOMPCommunicator::barrier() {
   gex_Event_Wait(gex_Coll_BarrierNB(Team, 0));
 }
 
-void DiOMPCommunicator::waitAllRMA() { gex_NBI_Wait(GEX_EC_ALL, 0); }
+void DiOMPCommunicator::waitAllRMA() {}
 
 void DiOMPCommunicator::waitRMA(omp_event_t Ev) { gex_NBI_Wait(Ev, 0); }
 
@@ -58,8 +59,8 @@ void DiOMPCommunicator::get(void *Dest, int Node, void *Src, size_t Nbytes) {
 }
 
 void DiOMPCommunicator::put(int Node, void *Dest, void *Src, size_t Nbytes) {
-  auto Error =
-      gex_RMA_PutNBI(Team, Node, Dest, Src, Nbytes, GEX_EVENT_DEFER, GEX_FLAG_NONE);
+  auto Error = gex_RMA_PutNBI(Team, Node, Dest, Src, Nbytes, GEX_EVENT_DEFER,
+                              GEX_FLAG_NONE);
   if (Error != 0) {
     THROW_ERROR("OpenMP PUT Error! Error code is %d", Error);
   }
@@ -75,7 +76,8 @@ DiOMPDeviceCommunicator::~DiOMPDeviceCommunicator() = default;
 // CUDA communicator implementations
 CUDAMemoryManager *DiOMPCUDACommunicator::StaticCudaMem = nullptr;
 
-DiOMPCUDACommunicator::DiOMPCUDACommunicator(int Mode)  : StreamTracker(StreamPool) {
+DiOMPCUDACommunicator::DiOMPCUDACommunicator(int Mode)
+    : StreamTracker(StreamPool) {
   CudaMem = dynamic_cast<CUDAMemoryManager *>(Mem);
   StaticCudaMem = CudaMem;
   this->Mode = Mode;
@@ -209,7 +211,7 @@ void DiOMPCUDACommunicator::dput(void *Dst, int Node, void *Src, size_t Size,
                                  int DstId, int SrcId) {
   if (Mode != 1) {
     int TotalDevices = omp_get_num_devices();
-    
+
     if (omp_get_rank_num() / TotalDevices == Node / TotalDevices) {
       int SrcDevice = LocalRank;
       int DstDevice = Node % TotalDevices;
@@ -219,14 +221,14 @@ void DiOMPCUDACommunicator::dput(void *Dst, int Node, void *Src, size_t Size,
       DevicePtr = CudaMem->getPeerPtr(DstDevice);
       size_t Offset = CudaMem->getDeviceOffset(Dst);
       char *RemotePtr = static_cast<char *>(DevicePtr) + Offset;
-      CUDACHECK(cudaMemcpyPeerAsync(RemotePtr, DstDevice, Src,
-                                    SrcDevice, Size, Stream));
+      CUDACHECK(cudaMemcpyPeerAsync(RemotePtr, DstDevice, Src, SrcDevice, Size,
+                                    Stream));
       StreamTracker.addStream(Stream);
       return;
-    } 
+    }
     void *DstR = CudaMem->convertLocaltoRemoteAddr(Dst, Node, 0);
 
-    gex_EP_t LocalEP = CudaMem->getEP(0);  
+    gex_EP_t LocalEP = CudaMem->getEP(0);
     gex_EP_Index_t RemoteIdx = gex_EP_QueryIndex(LocalEP);
     gex_TM_t CommTM = gex_TM_Pair(LocalEP, RemoteIdx);
 
@@ -235,19 +237,19 @@ void DiOMPCUDACommunicator::dput(void *Dst, int Node, void *Src, size_t Size,
       THROW_ERROR("OpenMP Device Get Error! Error code is %d", Error);
     }
     return;
-  } 
+  }
   gex_EP_t LocalEP = CudaMem->getEP(SrcId);
   gex_EP_t RemoteEP = CudaMem->getEP(DstId);
 
   gex_EP_Index_t RemoteIdx = gex_EP_QueryIndex(RemoteEP);
-  gex_TM_t CommTM = gex_TM_Pair(LocalEP, RemoteIdx);    
+  gex_TM_t CommTM = gex_TM_Pair(LocalEP, RemoteIdx);
 
   void *DstR = CudaMem->convertLocaltoRemoteAddr(Dst, Node, DstId);
-  auto Error =
-      gex_RMA_PutNBI(CommTM, Node, DstR, Src, Size, GEX_EVENT_DEFER, GEX_FLAG_NONE);
+  auto Error = gex_RMA_PutNBI(CommTM, Node, DstR, Src, Size, GEX_EVENT_DEFER,
+                              GEX_FLAG_NONE);
   if (Error != 0) {
     THROW_ERROR("OpenMP Device Put Error! Error code is %d", Error);
-  } 
+  }
 
   return;
 }
@@ -340,9 +342,8 @@ void diomp_device_dealloc() {
 
 HIPMemoryManager *DiOMPHIPCommunicator::StaticHIPMem = nullptr;
 
-
-
-DiOMPHIPCommunicator::DiOMPHIPCommunicator(int Mode) : StreamTracker(StreamPool) {
+DiOMPHIPCommunicator::DiOMPHIPCommunicator(int Mode)
+    : StreamTracker(StreamPool) {
   HipMem = dynamic_cast<HIPMemoryManager *>(Mem);
   StaticHIPMem = HipMem;
   this->Mode = Mode;
@@ -352,6 +353,7 @@ DiOMPHIPCommunicator::DiOMPHIPCommunicator(int Mode) : StreamTracker(StreamPool)
     for (int DeviceID = 0; DeviceID < DevicesNum; DeviceID++) {
       omp_target_setup_diompallocator(DeviceID, (void *)diomp_device_alloc,
                                       (void *)diomp_device_dealloc);
+      
     }
   } else {
     LocalRank = omp_get_rank_num() % omp_get_num_devices();
@@ -368,11 +370,10 @@ DiOMPHIPCommunicator::DiOMPHIPCommunicator(int Mode) : StreamTracker(StreamPool)
     RcclStreams = new hipStream_t[DevicesNum];
     RcclComms = new ncclComm_t[DevicesNum];
   }
-
 }
 
 DiOMPHIPCommunicator::~DiOMPHIPCommunicator() {
-  
+
   if (DevicesNum > 1) {
     for (int i = 0; i < DevicesNum; i++) {
       omp_target_setup_default_allocator(i);
@@ -421,40 +422,68 @@ void DiOMPHIPCommunicator::initRCCL() {
     }
     RCCLCHECK(ncclGroupEnd());
   }
-}
+  }
 
 void DiOMPHIPCommunicator::waitAllRMA() {
-  StreamTracker.syncAll();
-  gex_NBI_Wait(GEX_EC_ALL, 0);
+  while (!PendingEvents.empty() || !GexEvents.empty()) {
+    for (auto it = PendingEvents.begin(); it != PendingEvents.end();) {
+      hipError_t status = hipEventQuery(*it);
+      if (status == hipSuccess) {
+        HIPCHECK(hipEventDestroy(*it));
+        it = PendingEvents.erase(it);
+      } else if (status == hipErrorNotReady) {
+        ++it;
+      } else {
+        THROW_ERROR("HIP event query failed with error: %d", status);
+      }
+    }
+    gasnet_AMPoll();
+    for (auto it = GexEvents.begin(); it != GexEvents.end();) {
+      if (0 == gex_Event_Test(*it)) {
+        it = GexEvents.erase(it);
+      } else {
+        ++it;
+      }
+    }
+  }
+  GexEvents.clear();
 }
 
 void DiOMPHIPCommunicator::dget(void *Dest, int Node, void *Src, size_t Size,
-                                 int DstId, int SrcId) {
+                                int DstId, int SrcId) {
 
   if (Mode != 1) {
     int TotalDevices = omp_get_num_devices();
     if (omp_get_rank_num() / TotalDevices == Node / TotalDevices) {
+
       int SrcDevice = Node % TotalDevices;
       int DstDevice = LocalRank;
       void *DevicePtr = nullptr;
       DevicePtr = HipMem->getPeerPtr(SrcDevice);
       size_t Offset = HipMem->getDeviceOffset(Src);
       char *RemotePtr = static_cast<char *>(DevicePtr) + Offset;
-
+      hipEvent_t event;
+      HIPCHECK(hipEventCreate(&event));
       hipStream_t Stream = StreamPool.getStream();
-      HIPCHECK(hipMemcpyAsync(Dest, RemotePtr, Size, hipMemcpyDeviceToDevice, Stream));
-      StreamTracker.addStream(Stream);
+      HIPCHECK(hipMemcpyAsync(Dest, RemotePtr, Size, hipMemcpyDeviceToDevice,
+                              Stream));
+      HIPCHECK(hipEventRecord(event, Stream));
+      {
+        std::lock_guard<std::mutex> lock(EventMutex);
+        PendingEvents.push_back(event);
+      }
+      StreamPool.returnStream(Stream);
       return;
     }
+
     void *SrcR = HipMem->convertLocaltoRemoteAddr(Src, Node, 0);
 
     gex_EP_t LocalEP = HipMem->getEP(0);
     gex_EP_Index_t RemoteIdx = gex_EP_QueryIndex(LocalEP);
     gex_TM_t CommTM = gex_TM_Pair(LocalEP, RemoteIdx);
-    auto Error = gex_RMA_GetNBI(CommTM, Dest, Node, SrcR, Size, GEX_FLAG_NONE);
-    if (Error != 0) {
-      THROW_ERROR("OpenMP Device Get Error! Error code is %d", Error);
-    }
+
+    GexEvents.push_back(
+        gex_RMA_GetNB(CommTM, Dest, Node, SrcR, Size, GEX_FLAG_NONE));
     return;
   }
   gex_EP_t LocalEP = HipMem->getEP(SrcId);
@@ -464,66 +493,64 @@ void DiOMPHIPCommunicator::dget(void *Dest, int Node, void *Src, size_t Size,
   gex_TM_t CommTM = gex_TM_Pair(LocalEP, RemoteIdx);
 
   void *SrcR = HipMem->convertLocaltoRemoteAddr(Src, Node, SrcId);
-  auto Error = gex_RMA_GetNBI(CommTM, Dest, Node, SrcR, Size, GEX_FLAG_NONE);
+  GexEvents.push_back(
+    gex_RMA_GetNB(CommTM, Dest, Node, SrcR, Size, GEX_FLAG_NONE));
+  return;
+}
+
+void DiOMPHIPCommunicator::dput(void *Dst, int Node, void *Src, size_t Size,
+                                int DstId, int SrcId) {
+  if (Mode != 1) {
+    int TotalDevices = omp_get_num_devices();
+
+    if (omp_get_rank_num() / TotalDevices == Node / TotalDevices) {
+      int SrcDevice = LocalRank;
+      int DstDevice = Node % TotalDevices;
+      void *DevicePtr = nullptr;
+      DevicePtr = HipMem->getPeerPtr(DstDevice);
+      size_t Offset = HipMem->getDeviceOffset(Dst);
+      char *RemotePtr = static_cast<char *>(DevicePtr) + Offset;
+      hipEvent_t event;
+      HIPCHECK(hipEventCreate(&event));
+      hipStream_t Stream = StreamPool.getStream();
+      HIPCHECK(hipMemcpyAsync(RemotePtr, Src, Size, hipMemcpyDeviceToDevice,
+                              Stream));
+      HIPCHECK(hipEventRecord(event, Stream));
+      PendingEvents.push_back(event);
+      StreamPool.returnStream(Stream);
+      return;
+    }
+    void *DstR = HipMem->convertLocaltoRemoteAddr(Dst, Node, 0);
+
+    gex_EP_t LocalEP = HipMem->getEP(0);
+    gex_EP_Index_t RemoteIdx = gex_EP_QueryIndex(LocalEP);
+    gex_TM_t CommTM = gex_TM_Pair(LocalEP, RemoteIdx);
+    GexEvents.push_back(
+      gex_RMA_PutNB(CommTM, Node, DstR, Src, Size, GEX_EVENT_DEFER, GEX_FLAG_NONE));
+    return;
+  }
+  gex_EP_t LocalEP = HipMem->getEP(SrcId);
+  gex_EP_t RemoteEP = HipMem->getEP(DstId);
+
+  gex_EP_Index_t RemoteIdx = gex_EP_QueryIndex(RemoteEP);
+  gex_TM_t CommTM = gex_TM_Pair(LocalEP, RemoteIdx);
+
+  void *DstR = HipMem->convertLocaltoRemoteAddr(Dst, Node, DstId);
+  auto Error = gex_RMA_PutNBI(CommTM, Node, DstR, Src, Size, GEX_EVENT_DEFER,
+                              GEX_FLAG_NONE);
   if (Error != 0) {
-    THROW_ERROR("OpenMP Device Get Error! Error code is %d", Error);
+    THROW_ERROR("OpenMP Device Put Error! Error code is %d", Error);
   }
 
   return;
 }
 
-void DiOMPHIPCommunicator::dput(void *Dst, int Node, void *Src, size_t Size,
-                                 int DstId, int SrcId) {
-  if (Mode != 1) {
-    int TotalDevices = omp_get_num_devices();
-    
-    if (omp_get_rank_num() / TotalDevices == Node / TotalDevices) {
-      int SrcDevice = LocalRank;
-      int DstDevice = Node % TotalDevices;
-
-      hipStream_t Stream = StreamPool.getStream();
-      void *DevicePtr = nullptr;
-      DevicePtr = HipMem->getPeerPtr(DstDevice);
-      size_t Offset = HipMem->getDeviceOffset(Dst);
-      char *RemotePtr = static_cast<char *>(DevicePtr) + Offset;
-      HIPCHECK(hipMemcpyPeerAsync(RemotePtr, DstDevice, Src,
-                                    SrcDevice, Size, Stream));
-      StreamTracker.addStream(Stream);
-      return;
-    }
-    void *DstR = HipMem->convertLocaltoRemoteAddr(Dst, Node, 0);
-
-    gex_EP_t LocalEP = HipMem->getEP(0);  
-    gex_EP_Index_t RemoteIdx = gex_EP_QueryIndex(LocalEP);
-    gex_TM_t CommTM = gex_TM_Pair(LocalEP, RemoteIdx);
-
-    auto Error = gex_RMA_GetNBI(CommTM, DstR, Node, Src, Size, GEX_FLAG_NONE);
-    if (Error != 0) {
-      THROW_ERROR("OpenMP Device Get Error! Error code is %d", Error);
-    }
-    return;
-  } 
-  gex_EP_t LocalEP = HipMem->getEP(SrcId);
-  gex_EP_t RemoteEP = HipMem->getEP(DstId);
-
-  gex_EP_Index_t RemoteIdx = gex_EP_QueryIndex(RemoteEP);
-  gex_TM_t CommTM = gex_TM_Pair(LocalEP, RemoteIdx);    
-
-  void *DstR = HipMem->convertLocaltoRemoteAddr(Dst, Node, DstId);
-  auto Error =
-      gex_RMA_PutNBI(CommTM, Node, DstR, Src, Size, GEX_EVENT_DEFER, GEX_FLAG_NONE);
-  if (Error != 0) {
-    THROW_ERROR("OpenMP Device Put Error! Error code is %d", Error);
-  } 
-
-  return;
-}
-
 void DiOMPHIPCommunicator::dbcast(void *Data, size_t Size, omp_device_dt_t Dt,
-                                   int Node, int DstId) {
+                                  int Node, int DstId) {
   if (DevicesNum == 1) {
     HIPCHECK(hipSetDevice(DstId));
-    RCCLCHECK(ncclBcast(Data, Size, (ncclDataType_t)Dt, Node, RcclComm, RcclStream));
+    RCCLCHECK(
+        ncclBcast(Data, Size, (ncclDataType_t)Dt, Node, RcclComm, RcclStream));
     HIPCHECK(hipStreamSynchronize(RcclStream));
     return;
   }
@@ -535,7 +562,7 @@ void DiOMPHIPCommunicator::dbcast(void *Data, size_t Size, omp_device_dt_t Dt,
     RCCLCHECK(ncclBcast(RemoteData, Size, (ncclDataType_t)Dt,
                         Node * DevicesNum + DstId, RcclComms[i],
                         RcclStreams[i]));
-  } 
+  }
   RCCLCHECK(ncclGroupEnd());
 
   for (int i = 0; i < DevicesNum; i++) {
@@ -544,10 +571,10 @@ void DiOMPHIPCommunicator::dbcast(void *Data, size_t Size, omp_device_dt_t Dt,
 }
 
 void DiOMPHIPCommunicator::dallreduce(void *Src, void *Dst, size_t Size,
-                                       omp_device_dt_t Dt, omp_red_op_t Op,
-                                       int DstId) {
+                                      omp_device_dt_t Dt, omp_red_op_t Op,
+                                      int DstId) {
   if (DevicesNum == 1) {
-    HIPCHECK(hipSetDevice(DstId)); 
+    HIPCHECK(hipSetDevice(DstId));
     RCCLCHECK(ncclAllReduce(Src, Dst, Size, (ncclDataType_t)Dt, (ncclRedOp_t)Op,
                             RcclComm, RcclStream));
     HIPCHECK(hipStreamSynchronize(RcclStream));
@@ -556,9 +583,9 @@ void DiOMPHIPCommunicator::dallreduce(void *Src, void *Dst, size_t Size,
 
   RCCLCHECK(ncclGroupStart());
   for (int i = 0; i < DevicesNum; i++) {
-    RCCLCHECK(ncclAllReduce(Src, Dst, Size, (ncclDataType_t)Dt,
-                            (ncclRedOp_t)Op, RcclComms[i], RcclStreams[i]));
-  } 
+    RCCLCHECK(ncclAllReduce(Src, Dst, Size, (ncclDataType_t)Dt, (ncclRedOp_t)Op,
+                            RcclComms[i], RcclStreams[i]));
+  }
   RCCLCHECK(ncclGroupEnd());
 
   for (int i = 0; i < DevicesNum; i++) {
@@ -567,22 +594,22 @@ void DiOMPHIPCommunicator::dallreduce(void *Src, void *Dst, size_t Size,
 }
 
 void DiOMPHIPCommunicator::dreduce(void *Src, void *Dst, size_t Size,
-                                    omp_device_dt_t Dt, omp_red_op_t Op,
-                                    int Root, int DstId) {
+                                   omp_device_dt_t Dt, omp_red_op_t Op,
+                                   int Root, int DstId) {
   if (DevicesNum == 1) {
     HIPCHECK(hipSetDevice(DstId));
-    RCCLCHECK(ncclReduce(Src, Dst, Size, (ncclDataType_t)Dt, (ncclRedOp_t)Op, 
+    RCCLCHECK(ncclReduce(Src, Dst, Size, (ncclDataType_t)Dt, (ncclRedOp_t)Op,
                          Root, RcclComm, RcclStream));
     HIPCHECK(hipStreamSynchronize(RcclStream));
     return;
   }
 
   RCCLCHECK(ncclGroupStart());
-  for (int i = 0; i < DevicesNum; i++) {  
-    RCCLCHECK(ncclReduce(Src, Dst, Size, (ncclDataType_t)Dt,
-                         (ncclRedOp_t)Op, Root * DevicesNum + DstId,
-                         RcclComms[i], RcclStreams[i]));
-  } 
+  for (int i = 0; i < DevicesNum; i++) {
+    RCCLCHECK(ncclReduce(Src, Dst, Size, (ncclDataType_t)Dt, (ncclRedOp_t)Op,
+                         Root * DevicesNum + DstId, RcclComms[i],
+                         RcclStreams[i]));
+  }
   RCCLCHECK(ncclGroupEnd());
 
   for (int i = 0; i < DevicesNum; i++) {
@@ -598,10 +625,6 @@ void diomp_device_dealloc() {
   DiOMPHIPCommunicator::hip_device_dealloc();
   return;
 }
-
-
-
-
 
 #endif // DIOMP_ENABLE_HIP
 

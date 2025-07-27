@@ -327,7 +327,7 @@ HIPMemoryManager::HIPMemoryManager(gex_TM_t GexTeam, int Mode,
         continue;
       HIPCHECK(hipDeviceEnablePeerAccess(DeviceID, 0));
     }
-    // printf("LocalPtr %p\n", LocalPtr);
+    
     hipIpcMemHandle_t IpcHandle;
     HIPCHECK(hipIpcGetMemHandle(&IpcHandle, LocalPtr));
     IpcHandles.resize(RanksNum);
