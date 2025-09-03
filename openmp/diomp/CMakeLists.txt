@@ -138,6 +138,7 @@ add_library(diomp SHARED
   src/diomp.cpp
   src/diompmem.cpp
   src/diompcomm.cpp
+  src/diompgroup.cpp
 )
 
 link_directories(${GASNET_LIB})

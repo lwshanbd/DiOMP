@@ -124,14 +124,14 @@ protected:
 #ifdef DIOMP_ENABLE_CUDA
 class CUDAMemoryManager : public MemoryManager {
 public:
-  CUDAMemoryManager(gex_TM_t gexTeam, int Mode = 1, size_t DeviceSegSize = 16 * 1024 * 1024 * 1024);
+  CUDAMemoryManager(gex_TM_t gexTeam, int Mode = 1, size_t DeviceSegSize = 16ULL * 1024 * 1024 * 1024);
   ~CUDAMemoryManager() = default;
 
   void *deviceAlloc(size_t Size, int DeviceId) override;
   void deviceDealloc() override;
   void *getDeviceSegmentAddr(int Rank, int DeviceId) override;
   size_t getDeviceOffset(void *Ptr) override;
-  void *convertLocaltoRemoteAddr(void *Ptr, int Rank, int DeviceId);
+  void *convertLocaltoRemoteAddr(void *Ptr, int Rank, int DeviceId) override;
   void *convertRemotetoLocalAddr(void *Ptr, int Rank, int DeviceId);
   size_t getOffset(void *Ptr, int Rank, int DeviceId);
   gex_EP_t getEP(int DeviceId) override;
@@ -153,7 +153,7 @@ private:
 #ifdef DIOMP_ENABLE_HIP
 class HIPMemoryManager : public MemoryManager {
 public:
-  HIPMemoryManager(gex_TM_t gexTeam, int Mode = 1, size_t DeviceSegSize = 16 * 1024 * 1024 * 1024);
+  HIPMemoryManager(gex_TM_t gexTeam, int Mode = 1, size_t DeviceSegSize = 16ULL * 1024 * 1024 * 1024);
   ~HIPMemoryManager() = default;
 
   // Override device operations with empty implementations for now
@@ -161,7 +161,7 @@ public:
   void deviceDealloc() override;
   void *getDeviceSegmentAddr(int Rank, int DeviceId) override;
   size_t getDeviceOffset(void *Ptr) override;
-  void *convertLocaltoRemoteAddr(void *Ptr, int Rank, int DeviceId);
+  void *convertLocaltoRemoteAddr(void *Ptr, int Rank, int DeviceId) override;
   void *convertRemotetoLocalAddr(void *Ptr, int Rank, int DeviceId);
   size_t getOffset(void *Ptr, int Rank, int DeviceId);
   gex_EP_t getEP(int DeviceId) override;

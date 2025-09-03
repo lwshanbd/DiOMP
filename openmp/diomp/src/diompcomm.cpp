@@ -13,6 +13,15 @@
 #include "diompcomm.h"
 #include "gasnet.h"
 
+// Forward declarations for group NCCL/RCCL initialization
+#ifdef DIOMP_ENABLE_CUDA
+extern "C" int init_group_nccl_comms(ompx_group_t *group, int devices_num);
+#endif
+
+#ifdef DIOMP_ENABLE_HIP
+extern "C" int init_group_rccl_comms(ompx_group_t *group, int devices_num);
+#endif
+
 namespace diomp {
 
 extern "C" void omp_target_setup_diompallocator(int DeviceId, void *Alloc,
@@ -174,9 +183,9 @@ void DiOMPCUDACommunicator::dget(void *Dst, int Node, void *Src, size_t Size,
       size_t Offset = CudaMem->getDeviceOffset(Src);
       char *RemotePtr = static_cast<char *>(DevicePtr) + Offset;
       cudaStream_t Stream = StreamPool.getStream();
-      CUDACHECK(cudaMemcpyAsync(Dst, RemotePtr, Size, cudaMemcpyDeviceToDevice, Stream));
-      // CUDACHECK(cudaMemcpyPeerAsync(Dst, DstDevice, RemotePtr,
-      //                               SrcDevice, Size, Stream));
+      // Use peer-to-peer copy when possible, fallback to device-to-device
+      CUDACHECK(cudaMemcpyPeerAsync(Dst, DstDevice, RemotePtr,
+                                    SrcDevice, Size, Stream));
       StreamTracker.addStream(Stream);
       return;
     }
@@ -255,7 +264,37 @@ void DiOMPCUDACommunicator::dput(void *Dst, int Node, void *Src, size_t Size,
 }
 
 void DiOMPCUDACommunicator::dbcast(void *Data, size_t Size, omp_device_dt_t Dt,
-                                   int Node, int DstId) {
+                                   int Node, int DstId, ompx_group_t *group) {
+  if (group && group->rank != -1) {
+    // Use group-specific NCCL communicator
+    if (!group->nccl_initialized) {
+      // Initialize group NCCL communicators if not done yet
+      init_group_nccl_comms(group, DevicesNum);
+    }
+
+    if (group->devices_num == 1) {
+      CUDACHECK(cudaSetDevice(DstId));
+      NCCLCHECK(ncclBcast(Data, Size, (ncclDataType_t)Dt, Node, group->nccl_comm, group->nccl_stream));
+      CUDACHECK(cudaStreamSynchronize(group->nccl_stream));
+      return;
+    } else {
+      NCCLCHECK(ncclGroupStart());
+      for (int I = 0; I < group->devices_num; I++) {
+        void *RemoteData = CudaMem->convertLocaltoRemoteAddr(Data, omp_get_rank_num(), DstId);
+        NCCLCHECK(ncclBcast(RemoteData, Size, (ncclDataType_t)Dt,
+                            Node * group->devices_num + DstId, group->nccl_comms[I],
+                            group->nccl_streams[I]));
+      }
+      NCCLCHECK(ncclGroupEnd());
+
+      for (int I = 0; I < group->devices_num; I++) {
+        CUDACHECK(cudaStreamSynchronize(group->nccl_streams[I]));
+      }
+      return;
+    }
+  }
+
+  // Default behavior for global communicator
   if (DevicesNum == 1) {
     CUDACHECK(cudaSetDevice(DstId));
     NCCLCHECK(
@@ -281,7 +320,35 @@ void DiOMPCUDACommunicator::dbcast(void *Data, size_t Size, omp_device_dt_t Dt,
 
 void DiOMPCUDACommunicator::dallreduce(void *Src, void *Dst, size_t Size,
                                        omp_device_dt_t Dt, omp_red_op_t Op,
-                                       int DstId) {
+                                       int DstId, ompx_group_t *group) {
+  if (group && group->rank != -1) {
+    // Use group-specific NCCL communicator
+    if (!group->nccl_initialized) {
+      init_group_nccl_comms(group, this->DevicesNum);
+    }
+
+    if (group->devices_num == 1) {
+      CUDACHECK(cudaSetDevice(LocalRank));
+      NCCLCHECK(ncclAllReduce(Src, Dst, Size, (ncclDataType_t)Dt, (ncclRedOp_t)Op,
+                              group->nccl_comm, group->nccl_stream));
+      CUDACHECK(cudaStreamSynchronize(group->nccl_stream));
+      return;
+    } else {
+      NCCLCHECK(ncclGroupStart());
+      for (int i = 0; i < group->devices_num; i++) {
+        NCCLCHECK(ncclAllReduce(Src, Dst, Size, (ncclDataType_t)Dt, (ncclRedOp_t)Op,
+                                group->nccl_comms[i], group->nccl_streams[i]));
+      }
+      NCCLCHECK(ncclGroupEnd());
+      
+      for (int i = 0; i < group->devices_num; i++) {
+        CUDACHECK(cudaStreamSynchronize(group->nccl_streams[i]));
+      }
+      return;
+    }
+  }
+
+  // Default behavior for global communicator
   if (DevicesNum == 1) {
     CUDACHECK(cudaSetDevice(LocalRank));
     NCCLCHECK(ncclAllReduce(Src, Dst, Size, (ncclDataType_t)Dt, (ncclRedOp_t)Op,
@@ -304,7 +371,36 @@ void DiOMPCUDACommunicator::dallreduce(void *Src, void *Dst, size_t Size,
 
 void DiOMPCUDACommunicator::dreduce(void *Src, void *Dst, size_t Size,
                                     omp_device_dt_t Dt, omp_red_op_t Op,
-                                    int Root, int DstId) {
+                                    int Root, int DstId, ompx_group_t *group) {
+  if (group && group->rank != -1) {
+    // Use group-specific NCCL communicator
+    if (!group->nccl_initialized) {
+      init_group_nccl_comms(group, this->DevicesNum);
+    }
+
+    if (group->devices_num == 1) {
+      CUDACHECK(cudaSetDevice(DstId));
+      NCCLCHECK(ncclReduce(Src, Dst, Size, (ncclDataType_t)Dt, (ncclRedOp_t)Op,
+                           Root, group->nccl_comm, group->nccl_stream));
+      CUDACHECK(cudaStreamSynchronize(group->nccl_stream));
+      return;
+    } else {
+      NCCLCHECK(ncclGroupStart());
+      for (int i = 0; i < group->devices_num; i++) {
+        NCCLCHECK(ncclReduce(Src, Dst, Size, (ncclDataType_t)Dt, (ncclRedOp_t)Op,
+                             Root * group->devices_num + DstId, group->nccl_comms[i],
+                             group->nccl_streams[i]));
+      }
+      NCCLCHECK(ncclGroupEnd());
+      
+      for (int i = 0; i < group->devices_num; i++) {
+        CUDACHECK(cudaStreamSynchronize(group->nccl_streams[i]));
+      }
+      return;
+    }
+  }
+
+  // Default behavior for global communicator
   if (DevicesNum == 1) {
     CUDACHECK(cudaSetDevice(DstId));
     NCCLCHECK(ncclReduce(Src, Dst, Size, (ncclDataType_t)Dt, (ncclRedOp_t)Op,
@@ -457,7 +553,6 @@ void DiOMPHIPCommunicator::dget(void *Dest, int Node, void *Src, size_t Size,
     if (omp_get_rank_num() / TotalDevices == Node / TotalDevices) {
 
       int SrcDevice = Node % TotalDevices;
-      int DstDevice = LocalRank;
       void *DevicePtr = nullptr;
       DevicePtr = HipMem->getPeerPtr(SrcDevice);
       size_t Offset = HipMem->getDeviceOffset(Src);
@@ -504,7 +599,6 @@ void DiOMPHIPCommunicator::dput(void *Dst, int Node, void *Src, size_t Size,
     int TotalDevices = omp_get_num_devices();
 
     if (omp_get_rank_num() / TotalDevices == Node / TotalDevices) {
-      int SrcDevice = LocalRank;
       int DstDevice = Node % TotalDevices;
       void *DevicePtr = nullptr;
       DevicePtr = HipMem->getPeerPtr(DstDevice);
@@ -546,7 +640,38 @@ void DiOMPHIPCommunicator::dput(void *Dst, int Node, void *Src, size_t Size,
 }
 
 void DiOMPHIPCommunicator::dbcast(void *Data, size_t Size, omp_device_dt_t Dt,
-                                  int Node, int DstId) {
+                                  int Node, int DstId, ompx_group_t *group) {
+  if (group && group->rank != -1) {
+    // Use group-specific RCCL communicator
+    if (!group->rccl_initialized) {
+      // Initialize group RCCL communicators if not done yet
+      extern int DevicesNum;
+      init_group_rccl_comms(group, DevicesNum);
+    }
+
+    if (group->devices_num == 1) {
+      HIPCHECK(hipSetDevice(DstId));
+      RCCLCHECK(ncclBcast(Data, Size, (ncclDataType_t)Dt, Node, group->rccl_comm, group->rccl_stream));
+      HIPCHECK(hipStreamSynchronize(group->rccl_stream));
+      return;
+    } else {
+      RCCLCHECK(ncclGroupStart());
+      for (int i = 0; i < group->devices_num; i++) {
+        void *RemoteData = HipMem->convertLocaltoRemoteAddr(Data, omp_get_rank_num(), DstId);
+        RCCLCHECK(ncclBcast(RemoteData, Size, (ncclDataType_t)Dt,
+                            Node * group->devices_num + DstId, group->rccl_comms[i],
+                            group->rccl_streams[i]));
+      }
+      RCCLCHECK(ncclGroupEnd());
+
+      for (int i = 0; i < group->devices_num; i++) {
+        HIPCHECK(hipStreamSynchronize(group->rccl_streams[i]));
+      }
+      return;
+    }
+  }
+
+  // Default behavior for global communicator
   if (DevicesNum == 1) {
     HIPCHECK(hipSetDevice(DstId));
     RCCLCHECK(
@@ -572,7 +697,35 @@ void DiOMPHIPCommunicator::dbcast(void *Data, size_t Size, omp_device_dt_t Dt,
 
 void DiOMPHIPCommunicator::dallreduce(void *Src, void *Dst, size_t Size,
                                       omp_device_dt_t Dt, omp_red_op_t Op,
-                                      int DstId) {
+                                      int DstId, ompx_group_t *group) {
+  if (group && group->rank != -1) {
+    // Use group-specific RCCL communicator
+    if (!group->rccl_initialized) {
+      init_group_rccl_comms(group, this->DevicesNum);
+    }
+
+    if (group->devices_num == 1) {
+      HIPCHECK(hipSetDevice(DstId));
+      RCCLCHECK(ncclAllReduce(Src, Dst, Size, (ncclDataType_t)Dt, (ncclRedOp_t)Op,
+                              group->rccl_comm, group->rccl_stream));
+      HIPCHECK(hipStreamSynchronize(group->rccl_stream));
+      return;
+    } else {
+      RCCLCHECK(ncclGroupStart());
+      for (int i = 0; i < group->devices_num; i++) {
+        RCCLCHECK(ncclAllReduce(Src, Dst, Size, (ncclDataType_t)Dt, (ncclRedOp_t)Op,
+                                group->rccl_comms[i], group->rccl_streams[i]));
+      }
+      RCCLCHECK(ncclGroupEnd());
+      
+      for (int i = 0; i < group->devices_num; i++) {
+        HIPCHECK(hipStreamSynchronize(group->rccl_streams[i]));
+      }
+      return;
+    }
+  }
+
+  // Default behavior for global communicator
   if (DevicesNum == 1) {
     HIPCHECK(hipSetDevice(DstId));
     RCCLCHECK(ncclAllReduce(Src, Dst, Size, (ncclDataType_t)Dt, (ncclRedOp_t)Op,
@@ -595,7 +748,36 @@ void DiOMPHIPCommunicator::dallreduce(void *Src, void *Dst, size_t Size,
 
 void DiOMPHIPCommunicator::dreduce(void *Src, void *Dst, size_t Size,
                                    omp_device_dt_t Dt, omp_red_op_t Op,
-                                   int Root, int DstId) {
+                                   int Root, int DstId, ompx_group_t *group) {
+  if (group && group->rank != -1) {
+    // Use group-specific RCCL communicator
+    if (!group->rccl_initialized) {
+      init_group_rccl_comms(group, this->DevicesNum);
+    }
+
+    if (group->devices_num == 1) {
+      HIPCHECK(hipSetDevice(DstId));
+      RCCLCHECK(ncclReduce(Src, Dst, Size, (ncclDataType_t)Dt, (ncclRedOp_t)Op,
+                           Root, group->rccl_comm, group->rccl_stream));
+      HIPCHECK(hipStreamSynchronize(group->rccl_stream));
+      return;
+    } else {
+      RCCLCHECK(ncclGroupStart());
+      for (int i = 0; i < group->devices_num; i++) {
+        RCCLCHECK(ncclReduce(Src, Dst, Size, (ncclDataType_t)Dt, (ncclRedOp_t)Op,
+                             Root * group->devices_num + DstId, group->rccl_comms[i],
+                             group->rccl_streams[i]));
+      }
+      RCCLCHECK(ncclGroupEnd());
+      
+      for (int i = 0; i < group->devices_num; i++) {
+        HIPCHECK(hipStreamSynchronize(group->rccl_streams[i]));
+      }
+      return;
+    }
+  }
+
+  // Default behavior for global communicator
   if (DevicesNum == 1) {
     HIPCHECK(hipSetDevice(DstId));
     RCCLCHECK(ncclReduce(Src, Dst, Size, (ncclDataType_t)Dt, (ncclRedOp_t)Op,

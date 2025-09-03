@@ -270,8 +270,15 @@ void ompx_dput(void *Dst, int Rank, void *Src, size_t Size, int DstID,
 // End of RMA Operations
 
 // Synchronization Operations
-// Barrier synchronization across all Ranks
-void diomp_barrier() { Comm->barrier(); }
+// Barrier synchronization across all Ranks or within group
+void diomp_barrier(ompx_group_t *group) { 
+  if (group && group->rank != -1) {
+    printf("barrier in group\n");
+    gex_Event_Wait(gex_Coll_BarrierNB(group->team, 0));
+  } else {
+    Comm->barrier(); 
+  }
+}
 
 // Wait for completion of all RMA operations
 void diomp_waitALLRMA() { Comm->waitAllRMA(); }
@@ -286,39 +293,56 @@ void diomp_unlock(int Rank) { Comm->unlock(Rank); }
 // End of Synchronization Operations
 
 // Collective Operations
-// Broadcast data from root to all Ranks
-void omp_bcast(void *Data, size_t Size, int Rank) {
-  gex_Event_Wait(gex_Coll_BroadcastNB(diompTeam, Rank, Data, Data, Size, 0));
+// Broadcast data from root to all Ranks or within group
+void omp_bcast(void *Data, size_t Size, int Rank, ompx_group_t *group) {
+  if (group && group->rank != -1) {
+    // Convert group-local root to global rank if needed
+    gex_Rank_t gex_root = (Rank < group->size) ? (gex_Rank_t)group->ranks[Rank] : (gex_Rank_t)Rank;
+    gex_Event_Wait(gex_Coll_BroadcastNB(group->team, gex_root, Data, Data, Size, 0));
+  } else {
+    gex_Event_Wait(gex_Coll_BroadcastNB(diompTeam, Rank, Data, Data, Size, 0));
+  }
 }
 
-// All-reduce operation across all Ranks
+// All-reduce operation across all Ranks or within group
 void omp_allreduce(void *Src, void *Dst, size_t Size, omp_dt_t Dt,
-                   omp_op_t Op) {
-  gex_Event_Wait(gex_Coll_ReduceToAllNB(diompTeam, Dst, Src, Dt, sizeof(Dt),
-                                        Size, Op, NULL, NULL, 0));
+                   omp_op_t Op, ompx_group_t *group) {
+  if (group && group->rank != -1) {
+    gex_Event_Wait(gex_Coll_ReduceToAllNB(group->team, Dst, Src, Dt, sizeof(Dt),
+                                          Size, Op, NULL, NULL, 0));
+  } else {
+    gex_Event_Wait(gex_Coll_ReduceToAllNB(diompTeam, Dst, Src, Dt, sizeof(Dt),
+                                          Size, Op, NULL, NULL, 0));
+  }
 }
 
 void omp_reduce(void *Src, void *Dst, size_t Size, omp_dt_t Dt, omp_op_t Op,
-                int Root) {
-  gex_Event_Wait(gex_Coll_ReduceToOneNB(diompTeam, Root, Dst, Src, Dt,
-                                        sizeof(Dt), Size, Op, NULL, NULL, 0));
+                int Root, ompx_group_t *group) {
+  if (group && group->rank != -1) {
+    gex_Rank_t gex_root = (Root < group->size) ? (gex_Rank_t)group->ranks[Root] : (gex_Rank_t)Root;
+    gex_Event_Wait(gex_Coll_ReduceToOneNB(group->team, gex_root, Dst, Src, Dt,
+                                          sizeof(Dt), Size, Op, NULL, NULL, 0));
+  } else {
+    gex_Event_Wait(gex_Coll_ReduceToOneNB(diompTeam, Root, Dst, Src, Dt,
+                                          sizeof(Dt), Size, Op, NULL, NULL, 0));
+  }
 }
 
 #ifdef OPENMP_ENABLE_DIOMP_DEVICE
 
 void ompx_dbcast(void *Data, size_t Size, omp_device_dt_t Dt, int Rank,
-                 int DstID) {
-  Comm->dbcast(Data, Size, Dt, Rank, DstID);
+                 int DstID, ompx_group_t *group) {
+  Comm->dbcast(Data, Size, Dt, Rank, DstID, group);
 }
 
 void ompx_dallreduce(void *Src, void *Dst, size_t Size, omp_device_dt_t Dt,
-                     omp_red_op_t Op, int DstID) {
-  Comm->dallreduce(Src, Dst, Size, Dt, Op, DstID);
+                     omp_red_op_t Op, int DstID, ompx_group_t *group) {
+  Comm->dallreduce(Src, Dst, Size, Dt, Op, DstID, group);
 }
 
 void ompx_dreduce(void *Src, void *Dst, size_t Size, omp_device_dt_t Dt,
-                  omp_red_op_t Op, int Root, int DstID) {
-  Comm->dreduce(Src, Dst, Size, Dt, Op, Root, DstID);
+                  omp_red_op_t Op, int Root, int DstID, ompx_group_t *group) {
+  Comm->dreduce(Src, Dst, Size, Dt, Op, Root, DstID, group);
 }
 
 #endif

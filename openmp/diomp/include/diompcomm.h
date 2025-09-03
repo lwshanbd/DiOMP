@@ -60,16 +60,16 @@ public:
 
   // Device collective operations
   virtual void dbcast(void *Data, size_t Size, omp_device_dt_t Dt, 
-                     int Node, int DstId) {
+                     int Node, int DstId, ompx_group_t *group = nullptr) {
     THROW_ERROR("Device broadcast not supported in base communicator");
   }
   virtual void dallreduce(void *Src, void *Dst, size_t Size,
-                         omp_device_dt_t Dt, omp_red_op_t Op, int DstId) {
+                         omp_device_dt_t Dt, omp_red_op_t Op, int DstId, ompx_group_t *group = nullptr) {
     THROW_ERROR("Device allreduce not supported in base communicator");
   }
   virtual void dreduce(void *Src, void *Dst, size_t Size,
                       omp_device_dt_t Dt, omp_red_op_t Op, 
-                      int Root, int DstId) {
+                      int Root, int DstId, ompx_group_t *group = nullptr) {
     THROW_ERROR("Device reduce not supported in base communicator");
   }
 
@@ -203,12 +203,12 @@ public:
 
   // CUDA collective operations
   void dbcast(void *Data, size_t Size, omp_device_dt_t Dt, 
-              int Node, int DstId) override;
+              int Node, int DstId, ompx_group_t *group = nullptr) override;
   void dallreduce(void *Src, void *Dst, size_t Size,
-                  omp_device_dt_t Dt, omp_red_op_t Op, int DstId) override;
+                  omp_device_dt_t Dt, omp_red_op_t Op, int DstId, ompx_group_t *group = nullptr) override;
   void dreduce(void *Src, void *Dst, size_t Size,
                omp_device_dt_t Dt, omp_red_op_t Op, 
-               int Root, int DstId) override;
+               int Root, int DstId, ompx_group_t *group = nullptr) override;
 
   static void *cuda_device_alloc(size_t Size, int DeviceId){
     return StaticCudaMem->deviceAlloc(Size, DeviceId);
@@ -329,12 +329,12 @@ public:
 
   // HIP collective operations
   void dbcast(void *Data, size_t Size, omp_device_dt_t Dt, 
-              int Node, int DstId) override;
+              int Node, int DstId, ompx_group_t *group = nullptr) override;
   void dallreduce(void *Src, void *Dst, size_t Size,
-                  omp_device_dt_t Dt, omp_red_op_t Op, int DstId) override;
+                  omp_device_dt_t Dt, omp_red_op_t Op, int DstId, ompx_group_t *group = nullptr) override;
   void dreduce(void *Src, void *Dst, size_t Size,
                omp_device_dt_t Dt, omp_red_op_t Op, 
-               int Root, int DstId) override;
+               int Root, int DstId, ompx_group_t *group = nullptr) override;
 
   static void *hip_device_alloc(size_t Size, int DeviceId){
     return StaticHIPMem->deviceAlloc(Size, DeviceId);
