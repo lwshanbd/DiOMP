@@ -164,6 +164,32 @@ extern gex_Segment_t diompSeg;
 
 //extern std::atomic<size_t> SegSize;
 
+// Group support
+typedef struct ompx_group {
+  gex_TM_t team;
+  int size;
+  int rank;
+  int *ranks;
+  
+#ifdef DIOMP_ENABLE_CUDA
+  ncclComm_t nccl_comm;
+  cudaStream_t nccl_stream;
+  ncclComm_t *nccl_comms;      // For multiple devices per process
+  cudaStream_t *nccl_streams;  // For multiple devices per process
+  int devices_num;
+  bool nccl_initialized;
+#endif
+
+#ifdef DIOMP_ENABLE_HIP
+  ncclComm_t rccl_comm;
+  hipStream_t rccl_stream;
+  ncclComm_t *rccl_comms;      // For multiple devices per process
+  hipStream_t *rccl_streams;   // For multiple devices per process
+  int devices_num;
+  bool rccl_initialized;
+#endif
+} ompx_group_t;
+
 void __init_diomp();
 // Mode:
 // 1: One rank, multiple devices
@@ -191,28 +217,35 @@ void ompx_dput(void *dst, int node, void *src, size_t nbytes, int dst_id, int sr
 
 void get_offset(void *Ptr);
 
-void diomp_barrier();
+// Group management functions
+int ompx_group_create(ompx_group_t **group, int *ranks, int size);
+int ompx_group_destroy(ompx_group_t *group);
+int ompx_group_size(ompx_group_t *group);
+int ompx_group_rank(ompx_group_t *group);
+
+// Extended collective functions with optional group support
+void diomp_barrier(ompx_group_t *group = nullptr);
 void diomp_waitALLRMA();
 void diomp_waitRMA(omp_event_t ev);
 void diomp_lock(int Rank);
 void diomp_unlock(int Rank);
 
-void omp_bcast(void *data, size_t nbytes, int node);
+void omp_bcast(void *data, size_t nbytes, int node, ompx_group_t *group = nullptr);
 // Experimental. Only for benchmark
 
-void omp_allreduce(void *src, void *dst, size_t count, omp_dt_t dt, omp_op_t op);
-void omp_reduce(void *src, void *dst, size_t count, omp_dt_t dt, omp_op_t op, int root);
+void omp_allreduce(void *src, void *dst, size_t count, omp_dt_t dt, omp_op_t op, ompx_group_t *group = nullptr);
+void omp_reduce(void *src, void *dst, size_t count, omp_dt_t dt, omp_op_t op, int root, ompx_group_t *group = nullptr);
 
 #ifdef DIOMP_ENABLE_CUDA
-void ompx_dbcast(void *data, size_t count, omp_device_dt_t dt, int node, int dst_id);
-void ompx_dallreduce(void *src, void *dst, size_t count, omp_device_dt_t dt, omp_red_op_t op, int dst_id);
-void ompx_dreduce(void *src, void *dst, size_t count, omp_device_dt_t dt, omp_red_op_t op, int root, int dst_id);
+void ompx_dbcast(void *data, size_t count, omp_device_dt_t dt, int node, int dst_id, ompx_group_t *group = nullptr);
+void ompx_dallreduce(void *src, void *dst, size_t count, omp_device_dt_t dt, omp_red_op_t op, int dst_id, ompx_group_t *group = nullptr);
+void ompx_dreduce(void *src, void *dst, size_t count, omp_device_dt_t dt, omp_red_op_t op, int root, int dst_id, ompx_group_t *group = nullptr);
 #endif
 
 #ifdef DIOMP_ENABLE_HIP
-void ompx_dallreduce(void *src, void *dst, size_t count, omp_device_dt_t dt, omp_red_op_t op, int dst_id);
-void ompx_dreduce(void *src, void *dst, size_t count, omp_device_dt_t dt, omp_red_op_t op, int root, int dst_id);
-void ompx_dbcast(void *data, size_t count, omp_device_dt_t dt, int node, int dst_id);
+void ompx_dallreduce(void *src, void *dst, size_t count, omp_device_dt_t dt, omp_red_op_t op, int dst_id, ompx_group_t *group = nullptr);
+void ompx_dreduce(void *src, void *dst, size_t count, omp_device_dt_t dt, omp_red_op_t op, int root, int dst_id, ompx_group_t *group = nullptr);
+void ompx_dbcast(void *data, size_t count, omp_device_dt_t dt, int node, int dst_id, ompx_group_t *group = nullptr);
 #endif
 
 #ifdef __cplusplus
