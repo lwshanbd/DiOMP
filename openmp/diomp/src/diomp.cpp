@@ -255,14 +255,31 @@ void ompx_put(int Rank, void *Dst, void *Src, size_t Size) {
 
 #ifdef OPENMP_ENABLE_DIOMP_DEVICE
 
+
+// Overloaded ompx_get equivalent to ompx_dget
+void ompx_get(void *Dst, int Rank, void *Src, size_t Size, int DstID, int SrcID) {
+  Comm->dget(Dst, Rank, Src, Size, DstID, SrcID);
+}
+
+// Overloaded ompx_put equivalent to ompx_dput
+void ompx_put(void *Dst, int Rank, void *Src, size_t Size, int DstID, int SrcID) {
+  Comm->dput(Dst, Rank, Src, Size, DstID, SrcID);
+}
+
 void ompx_dget(void *Dst, int Rank, void *Src, size_t Size, int DstID,
                int SrcID) {
-  Comm->dget(Dst, Rank, Src, Size, DstID, SrcID);
+  // Convert host pointers to device pointers
+  void *DevDst = omp_get_mapped_ptr(Dst, DstID);
+  void *DevSrc = omp_get_mapped_ptr(Src, SrcID);
+  Comm->dget(DevDst, Rank, DevSrc, Size, DstID, SrcID);
 }
 
 void ompx_dput(void *Dst, int Rank, void *Src, size_t Size, int DstID,
                int SrcID) {
-  Comm->dput(Dst, Rank, Src, Size, DstID, SrcID);
+  // Convert host pointers to device pointers  
+  void *DevDst = omp_get_mapped_ptr(Dst, DstID);
+  void *DevSrc = omp_get_mapped_ptr(Src, SrcID);
+  Comm->dput(DevDst, Rank, DevSrc, Size, DstID, SrcID);
 }
 
 #endif
@@ -272,6 +289,16 @@ void ompx_dput(void *Dst, int Rank, void *Src, size_t Size, int DstID,
 // Synchronization Operations
 // Barrier synchronization across all Ranks or within group
 void diomp_barrier(ompx_group_t *group) { 
+  if (group && group->rank != -1) {
+    printf("barrier in group\n");
+    gex_Event_Wait(gex_Coll_BarrierNB(group->team, 0));
+  } else {
+    Comm->barrier(); 
+  }
+}
+
+// ompx_barrier - equivalent to diomp_barrier
+void ompx_barrier(ompx_group_t *group) { 
   if (group && group->rank != -1) {
     printf("barrier in group\n");
     gex_Event_Wait(gex_Coll_BarrierNB(group->team, 0));

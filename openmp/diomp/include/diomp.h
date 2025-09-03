@@ -211,6 +211,8 @@ void* llvm_omp_distributed_alloc(size_t Size);
 
 void ompx_get(void *dst, int node, void *src, size_t nbytes);
 void ompx_put(int node, void *dst, void *src, size_t nbytes);
+void ompx_get(void *dst, int node, void *src, size_t nbytes, int dst_id, int src_id);
+void ompx_put(void *dst, int node, void *src, size_t nbytes, int dst_id, int src_id);
 
 void ompx_dget(void *dst, int node, void *src, size_t nbytes, int dst_id, int src_id);
 void ompx_dput(void *dst, int node, void *src, size_t nbytes, int dst_id, int src_id);
@@ -225,6 +227,7 @@ int ompx_group_rank(ompx_group_t *group);
 
 // Extended collective functions with optional group support
 void diomp_barrier(ompx_group_t *group = nullptr);
+void ompx_barrier(ompx_group_t *group = nullptr);
 void diomp_waitALLRMA();
 void diomp_waitRMA(omp_event_t ev);
 void diomp_lock(int Rank);
