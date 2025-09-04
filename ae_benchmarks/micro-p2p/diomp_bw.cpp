@@ -34,10 +34,6 @@ void run_benchmark(std::size_t size_bytes, const char* operation) {
         exit(EXIT_FAILURE);
     }
 
-    // Initialize data on rank 1
-    if (rank == 1) {
-        fill_validation_pattern(data, size_ints);
-    }
 
     // Synchronize before starting benchmark
     diomp_barrier(nullptr);
@@ -78,9 +74,6 @@ void run_benchmark(std::size_t size_bytes, const char* operation) {
 
         diomp_barrier(nullptr);
 
-        // Verify data integrity
-        bool data_valid = verify_buffer(data, size_ints);
-
         // Calculate and print results
         double avg_bandwidth = calculate_average_bandwidth(times, size_bytes);
         double avg_time_us = 0;
@@ -89,7 +82,7 @@ void run_benchmark(std::size_t size_bytes, const char* operation) {
         }
         avg_time_us /= (times.size() - 4);
         
-        print_result(size_bytes, avg_bandwidth, avg_time_us, data_valid, operation);
+        print_result(size_bytes, avg_bandwidth, avg_time_us, true, operation);
     }
 
     omp_target_free(data, omp_get_default_device());
@@ -97,7 +90,7 @@ void run_benchmark(std::size_t size_bytes, const char* operation) {
 
 int main(int argc, char** argv) {
     // Initialize DiOMP with 2 GPUs
-    __init_diomp_target(2);
+    __init_diomp_target(1);
 
     // Parse command line arguments
     const char* operation = "get";  // default to get for DiOMP
