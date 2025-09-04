@@ -1,11 +1,8 @@
 #include <ctime>
 #include <cstring>
 #include <vector>
-#include <iostream>
 #include <cerrno>
 #include "benchmark_common.hpp"
-
-// Include CUDA and OpenMP headers after C++ standard library headers
 #include <omp.h>
 #include <diomp.h>
 
@@ -43,7 +40,7 @@ void run_benchmark(std::size_t size_bytes, const char* operation) {
     }
 
     // Synchronize before starting benchmark
-    ompx_barrier(nullptr);
+    diomp_barrier(nullptr);
 
     // Warmup phase
     for (int i = 0; i < WARMUP_ITERS; i++) {
@@ -53,14 +50,14 @@ void run_benchmark(std::size_t size_bytes, const char* operation) {
             } else if (strcmp(operation, "put") == 0) {
                 ompx_dput(data, 1, data, size_bytes, 0, 0);
             }
-            ompx_fence();
+            diomp_waitALLRMA();
         }
-        ompx_barrier(nullptr);
+        diomp_barrier(nullptr);
     }
 
     // Benchmark phase
     if (rank != 0) {
-        ompx_barrier(nullptr);
+        diomp_barrier(nullptr);
     } else {
         std::vector<double> times;
         times.reserve(TEST_ITERS);
@@ -74,12 +71,12 @@ void run_benchmark(std::size_t size_bytes, const char* operation) {
                 ompx_dput(data, 1, data, size_bytes, 0, 0);
             }
             
-            ompx_fence();
+            diomp_waitALLRMA();
             double end_time = get_time_in_microseconds();
             times.push_back(end_time - start_time);
         }
 
-        ompx_barrier(nullptr);
+        diomp_barrier(nullptr);
 
         // Verify data integrity
         bool data_valid = verify_buffer(data, size_ints);
