@@ -2,13 +2,11 @@
 #include <cstdlib>
 #include <cstring>
 #include <vector>
-#include <iostream>
 #include <cerrno>
 #include "benchmark_common.hpp"
-
-// Include MPI and OpenMP headers after C++ standard library headers
 #include <mpi.h>
 #include <omp.h>
+#include <iostream>
 
 using namespace benchmark;
 using std::vector;
