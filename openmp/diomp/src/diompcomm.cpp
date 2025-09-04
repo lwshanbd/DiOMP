@@ -543,6 +543,7 @@ void DiOMPHIPCommunicator::waitAllRMA() {
     }
   }
   GexEvents.clear();
+  gex_NBI_Wait(GEX_EC_ALL, 0);
 }
 
 void DiOMPHIPCommunicator::dget(void *Dest, int Node, void *Src, size_t Size,
@@ -581,8 +582,8 @@ void DiOMPHIPCommunicator::dget(void *Dest, int Node, void *Src, size_t Size,
         gex_RMA_GetNB(CommTM, Dest, Node, SrcR, Size, GEX_FLAG_NONE));
     return;
   }
-  gex_EP_t LocalEP = HipMem->getEP(SrcId);
-  gex_EP_t RemoteEP = HipMem->getEP(DstId);
+  gex_EP_t LocalEP = HipMem->getEP(DstId);
+  gex_EP_t RemoteEP = HipMem->getEP(SrcId);
 
   gex_EP_Index_t RemoteIdx = gex_EP_QueryIndex(RemoteEP);
   gex_TM_t CommTM = gex_TM_Pair(LocalEP, RemoteIdx);
@@ -630,11 +631,9 @@ void DiOMPHIPCommunicator::dput(void *Dst, int Node, void *Src, size_t Size,
   gex_TM_t CommTM = gex_TM_Pair(LocalEP, RemoteIdx);
 
   void *DstR = HipMem->convertLocaltoRemoteAddr(Dst, Node, DstId);
-  auto Error = gex_RMA_PutNBI(CommTM, Node, DstR, Src, Size, GEX_EVENT_DEFER,
-                              GEX_FLAG_NONE);
-  if (Error != 0) {
-    THROW_ERROR("OpenMP Device Put Error! Error code is %d", Error);
-  }
+  GexEvents.push_back(
+    gex_RMA_PutNB(CommTM, Node, DstR, Src, Size, GEX_EVENT_DEFER, GEX_FLAG_NONE));
+
 
   return;
 }
@@ -645,7 +644,6 @@ void DiOMPHIPCommunicator::dbcast(void *Data, size_t Size, omp_device_dt_t Dt,
     // Use group-specific RCCL communicator
     if (!group->rccl_initialized) {
       // Initialize group RCCL communicators if not done yet
-      extern int DevicesNum;
       init_group_rccl_comms(group, DevicesNum);
     }
 
