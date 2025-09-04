@@ -257,28 +257,42 @@ void ompx_put(int Rank, void *Dst, void *Src, size_t Size) {
 
 
 // Overloaded ompx_get equivalent to ompx_dget
-void ompx_get(void *Dst, int Rank, void *Src, size_t Size, int DstID, int SrcID) {
-  Comm->dget(Dst, Rank, Src, Size, DstID, SrcID);
-}
+// void ompx_get(void *Dst, int Rank, void *Src, size_t Size, int DstID, int SrcID) {
+//   Comm->dget(Dst, Rank, Src, Size, DstID, SrcID);
+// }
 
-// Overloaded ompx_put equivalent to ompx_dput
-void ompx_put(void *Dst, int Rank, void *Src, size_t Size, int DstID, int SrcID) {
-  Comm->dput(Dst, Rank, Src, Size, DstID, SrcID);
-}
+// // Overloaded ompx_put equivalent to ompx_dput
+// void ompx_put(void *Dst, int Rank, void *Src, size_t Size, int DstID, int SrcID) {
+//   Comm->dput(Dst, Rank, Src, Size, DstID, SrcID);
+// }
 
 void ompx_dget(void *Dst, int Rank, void *Src, size_t Size, int DstID,
                int SrcID) {
-  // Convert host pointers to device pointers
-  void *DevDst = omp_get_mapped_ptr(Dst, DstID);
-  void *DevSrc = omp_get_mapped_ptr(Src, SrcID);
+  void *DevDst = Dst;
+  void *DevSrc = Src;
+  // Rule: if the pointer is not present. It is device pointer.
+  // It is UB to use host pointer which is not mapped to device pointer.
+  if (omp_target_is_present(Dst, DstID)) {
+    DevDst = omp_get_mapped_ptr(Dst, DstID);
+  }
+  if (omp_target_is_present(Src, SrcID)) {
+    DevSrc = omp_get_mapped_ptr(Src, SrcID);
+  }
   Comm->dget(DevDst, Rank, DevSrc, Size, DstID, SrcID);
 }
 
 void ompx_dput(void *Dst, int Rank, void *Src, size_t Size, int DstID,
                int SrcID) {
-  // Convert host pointers to device pointers  
-  void *DevDst = omp_get_mapped_ptr(Dst, DstID);
-  void *DevSrc = omp_get_mapped_ptr(Src, SrcID);
+  void *DevDst = Dst;
+  void *DevSrc = Src;
+  // Rule: if the pointer is not present. It is device pointer.
+  // It is UB to use host pointer which is not mapped to device pointer.
+  if (omp_target_is_present(Dst, DstID)) {
+    DevDst = omp_get_mapped_ptr(Dst, DstID);
+  }
+  if (omp_target_is_present(Src, SrcID)) {
+    DevSrc = omp_get_mapped_ptr(Src, SrcID);
+  }
   Comm->dput(DevDst, Rank, DevSrc, Size, DstID, SrcID);
 }
 
@@ -309,6 +323,9 @@ void ompx_barrier(ompx_group_t *group) {
 
 // Wait for completion of all RMA operations
 void diomp_waitALLRMA() { Comm->waitAllRMA(); }
+
+// Fence is equivalent to waitAllRMA
+void ompx_fence() { Comm->waitAllRMA(); }
 
 // Wait for completion of a specific RMA operation
 void diomp_waitRMA(omp_event_t Ev) { Comm->waitRMA(Ev); }
