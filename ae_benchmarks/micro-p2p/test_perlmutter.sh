@@ -1,6 +1,7 @@
 # Please make sure you have allocated 2 Nodes and each node has at least 1 GPU.
 chmod +x run.sh
 
+module load nccl
 make all
 srun -n 2 ./diomp_bw get > diomp_bw_get.txt
 srun -n 2 ./diomp_bw put > diomp_bw_put.txt

@@ -58,7 +58,7 @@ cd build
 # Common LLVM CMake options
 common_llvm_options=(
     -G Ninja
-    -B llvm_build1 \
+    -B llvm_build \
     -DCMAKE_BUILD_TYPE=RelWithDebInfo \
     -DCMAKE_C_COMPILER=clang \
     -DCMAKE_CXX_COMPILER=clang++ \
