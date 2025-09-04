@@ -156,7 +156,6 @@ CUDAMemoryManager::CUDAMemoryManager(gex_TM_t GexTeam, int Mode,
                                      cudaIpcMemLazyEnablePeerAccess));
       PeerPtrs.push_back(PeerPtr);
     }
-    printf("PeerPtrs size = %zu\n", PeerPtrs.size());
   }
 }
 
