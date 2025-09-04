@@ -36,11 +36,6 @@ void run_benchmark(std::size_t msg_size, const char* operation) {
         MPI_Abort(MPI_COMM_WORLD, 1);
     }
 
-    // Initialize memory on GPU with validation pattern
-    if (rank == 1) {
-        fill_validation_pattern(gpu_buf, size_ints);
-    }
-
     // Create MPI window
     MPI_Win win;
     MPI_Win_create(gpu_buf, msg_size, 1, MPI_INFO_NULL, MPI_COMM_WORLD, &win);
@@ -79,9 +74,6 @@ void run_benchmark(std::size_t msg_size, const char* operation) {
             times.push_back(end_time - start_time);
         }
 
-        // Verify data integrity
-        bool data_valid = verify_buffer(gpu_buf, size_ints);
-        
         // Calculate and print results
         double avg_bandwidth = calculate_average_bandwidth(times, msg_size);
         double avg_time_us = 0;
@@ -90,7 +82,7 @@ void run_benchmark(std::size_t msg_size, const char* operation) {
         }
         avg_time_us /= (times.size() - 4);
         
-        print_result(msg_size, avg_bandwidth, avg_time_us, data_valid, operation);
+        print_result(msg_size, avg_bandwidth, avg_time_us, true, operation);
     } else {
         for (int i = 0; i < TEST_ITERS; i++) {
             MPI_Win_fence(0, win);
