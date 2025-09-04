@@ -15,7 +15,7 @@ DIOMP_PATH = /global/cfs/cdirs/xpress/baodi/DiOMP-GPU
 MPICH_PATH = /opt/cray/pe/mpich/8.1.30
 LIBFABRIC_PATH = /opt/cray/libfabric/1.22.0
 PMI_PATH = /opt/cray/pe/pmi/6.1.13
-SMA_PATH = /opt/cray/pe/sma/11.7.2
+
 
 # NCCL configuration
 NCCL_FLAGS = -I$(NCCL_HOME)/include -L$(NCCL_HOME)/lib -lcuda -lnccl
@@ -43,35 +43,35 @@ DIOMP_FLAGS = -DDIOMP_ENABLE_CUDA -ldiomp \
 # Common flags for all targets
 COMMON_FLAGS = $(CXXFLAGS) $(NCCL_FLAGS) $(MPI_FLAGS) $(PMI_FLAGS)
 
-# SHMEM configuration
-SHMEM_FLAGS = -lsma -L$(SMA_PATH)/ofi/sma/lib64 -I$(SMA_PATH)/ofi/sma/include
-
-# Common flags for all targets
-COMMON_FLAGS = $(CXXFLAGS) $(NCCL_FLAGS) $(PMI_FLAGS)
-
 # Benchmark targets
-TARGETS = diomp_mm mpi_mm
+TARGETS = diomp_bcast mpi_bcast diomp_allreduce mpi_allreduce
 
-.PHONY: all clean help diomp mpi
+.PHONY: all clean help
 
 all: $(TARGETS)
 
 # Build rules
-diomp_mm: diomp_mm.cpp
-	$(CXX) $(COMMON_FLAGS) $(GASNET_FLAGS) $(DIOMP_FLAGS) -o diomp_mm $<
+diomp_bcast: diomp_bcast.cpp
+	$(CXX) $(COMMON_FLAGS) $(GASNET_FLAGS) $(DIOMP_FLAGS) -o $@ $<
 
-mpi_mm: mpi_mm.cpp
-	$(CXX) $(COMMON_FLAGS) $(MPI_FLAGS) -o mpi_mm $<
+mpi_bcast: mpi_bcast.cpp
+	$(CXX) $(COMMON_FLAGS) $(MPI_FLAGS) -o $@ $<
 
+diomp_allreduce: diomp_allreduce.cpp
+	$(CXX) $(COMMON_FLAGS) $(GASNET_FLAGS) $(DIOMP_FLAGS) -o $@ $<
+
+mpi_allreduce: mpi_allreduce.cpp
+	$(CXX) $(COMMON_FLAGS) $(MPI_FLAGS) -o $@ $<
 
 clean:
 	rm -f $(TARGETS)
 
 help:
 	@echo "Available targets:"
-	@echo "  all    - Build all benchmarks (default)"
-	@echo "  diomp  - Build DiOMP matrix multiplication benchmark"
-	@echo "  mpi    - Build MPI matrix multiplication benchmark"
-	@echo "  clean  - Remove all built targets"
-	@echo "  help   - Show this help message"
-
+	@echo "  all     - Build all benchmarks (default)"
+	@echo "  diomp_bcast - Build DiOMP broadcast benchmark"
+	@echo "  mpi_bcast   - Build MPI broadcast benchmark"
+	@echo "  diomp_allreduce - Build DiOMP allreduce benchmark"
+	@echo "  mpi_allreduce - Build MPI allreduce benchmark"
+	@echo "  clean    - Remove all built targets"
+	@echo "  help     - Show this help message"
