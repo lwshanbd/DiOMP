@@ -1,6 +1,33 @@
 #!/bin/bash
 set -euo pipefail
 
+# Function to capture current environment variables
+capture_env_vars() {
+    local env_file="$1"
+    echo "# Environment variables set by tioga.sh installation script" > "$env_file"
+    echo "# Source this file to load the environment: source $env_file" >> "$env_file"
+    echo "" >> "$env_file"
+    
+    # Export all relevant environment variables
+    echo "export PATH=\"$PATH\"" >> "$env_file"
+    echo "export LD_LIBRARY_PATH=\"$LD_LIBRARY_PATH\"" >> "$env_file"
+    echo "export LIBRARY_PATH=\"$LIBRARY_PATH\"" >> "$env_file"
+    echo "export MANPATH=\"$MANPATH\"" >> "$env_file"
+    echo "export CPATH=\"$CPATH\"" >> "$env_file"
+    echo "export C_INCLUDE_PATH=\"$C_INCLUDE_PATH\"" >> "$env_file"
+    echo "export CPLUS_INCLUDE_PATH=\"$CPLUS_INCLUDE_PATH\"" >> "$env_file"
+    
+    # Add specific installation paths as comments for reference
+    echo "" >> "$env_file"
+    echo "# Installation directories:" >> "$env_file"
+    echo "# GASNET_ROOT=\"$GASNET_ROOT\"" >> "$env_file"
+    echo "# LLVM_DIR=\"$LLVM_DIR\"" >> "$env_file"
+    echo "# INSTALL_DIR=\"$INSTALL_DIR\"" >> "$env_file"
+    
+    echo "" >> "$env_file"
+    echo "echo \"Environment loaded from tioga.sh installation\"" >> "$env_file"
+}
+
 # Load required modules
 module load rocm
 
@@ -118,5 +145,18 @@ ninja -j "$BUILD_JOBS" -C llvm_build install
 cd ../ae_benchmarks/
 
 echo "Installation completed successfully!"
+
+# Generate environment variables file
+ENV_FILE="$INSTALL_DIR/tioga_env.sh"
+capture_env_vars "$ENV_FILE"
+
+echo ""
+echo "=================================================="
+echo "Environment variables have been saved to:"
+echo "  $ENV_FILE"
+echo ""
+echo "To load the environment in future sessions, run:"
+echo "  source $ENV_FILE"
+echo "=================================================="
 
 
