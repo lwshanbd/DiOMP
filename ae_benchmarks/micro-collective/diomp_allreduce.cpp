@@ -14,7 +14,6 @@ int main() {
     int rank = omp_get_rank_num();
     int size = omp_get_num_ranks();
     int DevicesNum = omp_get_num_devices();
-    printf("DevicesNum %d\n", DevicesNum);
 
     // Data size from 4 bytes to 128MB, doubling each time
     for (size_t data_size = 1; data_size <= (256 * 1024 * 1024) / sizeof(double); data_size *= 2) {
