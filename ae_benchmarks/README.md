@@ -58,10 +58,12 @@ Please adjust the Makefile configuration according to the actual installation pa
 
 
 This section should be run using 1 to 8 nodes.
-Please note that when running on Perlmutter, ensure to use the run.sh driver program.
+**Please note that when running on Perlmutter, ensure to use the run.sh driver program.**
 `run.sh` will handle device and rank binding.
-For example: `srun -N 4 -n 16 ./run.sh ./mpi_mm`
+For example: `srun -n 16 ./run.sh ./mpi_mm`
 
+For Perlmutter, we also provide sbatch generation scripts for batch generation of sbatch scripts. Please adjust the Account as needed. This can also be used for other slurm platforms.
+Before running, please execute `chmod +x run.sh`
 
 The Artifact goal is that DiOMP should outperform the MPI implementation.
 
@@ -87,3 +89,9 @@ For the color matrix, darker blue indicates better DiOMP performance, while ligh
 
 
 To plot MM curves, please manually input the execution times in `mm_plot.py`.
+
+## Contact
+
+If you encounter any issues, please contact baodi.shan@stonybrook.edu (PAW ATM is not double-blind review).
+
+
