@@ -73,5 +73,3 @@ int main() {
 
     return 0;
 }
-
-// clang++ diomp_allreduce.cpp -DOPENMP_ENABLE_DIOMP_DEVICE=1 -lcuda -ldiomp -fopenmp  --offload-arch=sm_80 -lnccl -L /global/cfs/cdirs/xpress/baodi/software/llvm-gpu/lib -L /global/cfs/cdirs/xpress/baodi/software/gasnet-gpu/lib -I /global/cfs/cdirs/xpress/baodi/software/gasnet-gpu/include/ofi-conduit/ -lgasnet-ofi-par -no-pie -lmpi -lhwloc -lrt -pthread -I /opt/cray/pe/mpich/8.1.28/ofi/gnu/12.3/include -L /opt/cray/pe/mpich/8.1.28/ofi/gnu/12.3/lib -L/opt/cray/libfabric/1.20.1/lib64 -lfabric -L /opt/cray/pe/pmi/6.1.13/lib -lpmi -lhugetlbfs -DDIOMP_ENABLE_CUDA -I $NCCL_HOME/include -L $NCCL_HOME/lib -o diomp_allreduce

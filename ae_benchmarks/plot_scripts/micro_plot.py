@@ -219,7 +219,7 @@ def main():
     else:
         print("No input files specified.")
         print("\nUsage:")
-        print("  python3 plot_benchmark.py --diomp-get-file diomp_bw_get.txt --diomp-put-file diomp_bw_put.txt \\")
+        print("  python3 micro_plot.py --diomp-get-file diomp_bw_get.txt --diomp-put-file diomp_bw_put.txt \\")
         print("                            --mpi-get-file mpi_bw_get.txt --mpi-put-file mpi_bw_put.txt")
         print("\nExample workflow:")
         print("  1. Run benchmarks manually:")
@@ -228,7 +228,7 @@ def main():
         print("     ./mpi_bw get > mpi_get.txt")
         print("     ./mpi_bw put > mpi_put.txt")
         print("  2. Generate plots:")
-        print("     python3 plot_benchmark.py --diomp-get-file diomp_get.txt --diomp-put-file diomp_put.txt \\")
+        print("     python3 micro_plot.py --diomp-get-file diomp_get.txt --diomp-put-file diomp_put.txt \\")
         print("                               --mpi-get-file mpi_get.txt --mpi-put-file mpi_put.txt")
         return
 

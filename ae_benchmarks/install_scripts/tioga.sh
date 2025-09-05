@@ -111,10 +111,7 @@ setup_llvm_env
 # 2.2 Install LLVM+Clang+Offload+OpenMP with DiOMP
 echo "Building LLVM with DiOMP..."
 cmake "${common_llvm_options[@]}" \
-    -DOPENMP_ENABLE_DIOMP=ON \
-    -DOPENMP_DIOMP_GASNET_ROOT="$GASNET_ROOT" \
-    -DOPENMP_GASNET_API="OFI" \
-    -DOPENMP_MPI_ROOT="/opt/cray/pe/mpich/8.1.31" \
+    -DOPENMP_ENABLE_DIOMP=ON
 
 ninja -j "$BUILD_JOBS" -C llvm_build install
 
