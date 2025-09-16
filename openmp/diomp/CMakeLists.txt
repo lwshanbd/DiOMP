@@ -42,6 +42,11 @@ endif()
 if(GASNET_CONDUIT_IBV)
   set(GASNET_CORE_INCLUDE "${GASNET_ROOT}/include/")
   set(GASNET_INCLUDE "${GASNET_ROOT}/include/ibv-conduit/")
+  set(GASNET_LIB "${GASNET_ROOT}/lib")
+  set(LIBMPI_LIB "${MPI_ROOT}/lib")
+  set(HWLOC_LIB "/usr/local/hwloc-2.9.1/lib")
+  set(LIBCUDA_LIB "/usr/local/cuda-12.1/targets/x86_64-linux/lib/stubs/")
+  link_directories(${LIBMPI_LIB} ${GASNET_LIB} LLVMSupport ${HWLOC_LIB} ${LIBCUDA_LIB})
   message("Using IBV")
 elseif(GASNET_CONDUIT_OFI)
   set(GASNET_CORE_INCLUDE "${GASNET_ROOT}/include/")
@@ -155,7 +160,7 @@ set(DIOMP_LIBS
   # GASNet IBV libraries
   $<$<BOOL:${GASNET_CONDUIT_IBV}>:-lgasnet-ibv-par>
   $<$<BOOL:${GASNET_CONDUIT_IBV}>:-libverbs>
-  $<$<BOOL:${GASNET_CONDUIT_IBV}>:--offload-arch=gfx942>
+  $<$<BOOL:${GASNET_CONDUIT_IBV}>:--offload-arch=sm_60>
 
   # GASNet OFI libraries
   $<$<BOOL:${GASNET_CONDUIT_OFI}>:${GASNET_LIB}/libgasnet-ofi-par.a>
