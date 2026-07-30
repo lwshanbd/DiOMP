@@ -145,11 +145,9 @@ link_directories(${GASNET_LIB})
 set(DIOMP_LIBS
   # Base libraries
   -lmpi
-  -fopenmp
   -lrt
   -lhwloc
   -pthread
-  -lLLVMSupport
   
   # GASNet IBV libraries
   $<$<BOOL:${GASNET_CONDUIT_IBV}>:-lgasnet-ibv-par>
@@ -163,7 +161,13 @@ set(DIOMP_LIBS
   $<$<BOOL:${GASNET_CONDUIT_OFI}>:-lfabric>
   $<$<BOOL:${GASNET_CONDUIT_OFI}>:-L${LIBFABRIC_LIB}>
   $<$<BOOL:${GASNET_CONDUIT_OFI}>:-lpmi>
-  $<$<BOOL:${GASNET_CONDUIT_OFI}>:--offload-arch=sm_80>
+  # Local adaptation for Delta AI: dropped --offload-arch=sm_80 here. This is
+  # the *link* library list of a host-only shared object, so an offload arch is
+  # meaningless (and sm_80 is not this machine's sm_90 anyway). Its real effect
+  # is to send the in-tree clang down an offload link path that the partially
+  # built runtimes tree cannot yet service: "posix_spawn failed". The ROCm
+  # equivalent happens to be satisfiable in-tree, which is why Tioga does not
+  # hit this. The IBV/gfx942 line above is left untouched.
   # CUDA libraries
   $<$<BOOL:${OPENMP_DIOMP_ENABLE_CUDA}>:-lcudart>
   $<$<BOOL:${OPENMP_DIOMP_ENABLE_CUDA}>:-lcuda>
@@ -178,6 +182,26 @@ set(DIOMP_LIBS
 add_definitions(-DGASNETT_USE_GCC_ATTRIBUTE_NOINLINE=1)
 
 target_link_libraries(diomp PUBLIC ${DIOMP_LIBS})
+
+# -fopenmp was removed from DIOMP_LIBS above: on the link line it makes the
+# driver request a bare -lomp, and in a runtimes build libomp is produced in
+# this same pass and is not installed yet, so that is unresolvable. Keep it as
+# a compile flag and let the in-tree omp target supply the library, which also
+# orders diomp after omp.
+target_compile_options(diomp PRIVATE -fopenmp)
+if(TARGET omp)
+  target_link_libraries(diomp PUBLIC omp)
+endif()
+if(TARGET omptarget)
+  target_link_libraries(diomp PUBLIC omptarget)
+else()
+  # openmp is configured before offload in the runtimes build, so the omptarget
+  # target is not visible here. omp_target_alloc and
+  # omp_target_setup_diompallocator come from libomptarget.so, which is always
+  # loaded in a process that uses DiOMP, so let them resolve at load time
+  # instead (LLVM puts -Wl,-z,defs on shared libraries by default).
+  target_link_options(diomp PRIVATE "-Wl,-z,undefs")
+endif()
 
 install(TARGETS diomp LIBRARY DESTINATION "${OPENMP_INSTALL_LIBDIR}")
 install(FILES 
